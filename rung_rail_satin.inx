@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<inkscape-extension xmlns="http://www.inkscape.org/namespace/inkscape/extension">
+
+	<name>Edit Ladder Rungs</name>
+	<id>maps_edge.rung_rail_satin</id>
+
+	<param name="help" type="description">Select one ladder (2 rails plus rungs) or two separate rail paths. Add: builds all rungs if there are none, otherwise inserts a rung between each pair of existing rungs. Decimate: removes every other rung. The 4 rungs at each end are never touched.</param>
+
+	<param name="mode" type="optiongroup" appearance="radio" gui-text="Mode:">
+		<option value="add">Add</option>
+		<option value="decimate">Decimate</option>
+	</param>
+
+	<effect>
+		<object-type>all</object-type>
+		<effects-menu>
+			<submenu name="Ink/Stitch" translatable="no" />
+		</effects-menu>
+	</effect>
+
+	<script>
+		<command location="inx" interpreter="python">edit_ladder_rungs.py</command>
+	</script>
+
+</inkscape-extension>

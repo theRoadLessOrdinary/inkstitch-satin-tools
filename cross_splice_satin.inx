@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<inkscape-extension xmlns="http://www.inkscape.org/namespace/inkscape/extension">
+
+	<name>Cross-Splice Rails</name>
+	<id>maps_edge.cross_splice_satin</id>
+
+	<param name="help" type="description">Select 4 open strokes around one crossing to splice them into 2 rails and generate rungs in one step, or 2 strokes to just splice them into one rail. Strokes are paired by end-to-end distance, so select only the strokes at that one crossing.</param>
+
+	<effect>
+		<object-type>all</object-type>
+		<effects-menu>
+			<submenu name="Ink/Stitch" translatable="no" />
+		</effects-menu>
+	</effect>
+
+	<script>
+		<command location="inx" interpreter="python">cross_splice_satin.py</command>
+	</script>
+
+</inkscape-extension>

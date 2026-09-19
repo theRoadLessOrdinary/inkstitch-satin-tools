@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<inkscape-extension xmlns="http://www.inkscape.org/namespace/inkscape/extension">
+
+	<name>Normalize Stitch Direction</name>
+	<id>maps_edge.normalize_stitch_direction</id>
+
+	<param name="help" type="description">Select the ladder objects in stitch order (bottom to top for the first one). Each object's rail direction is flipped as needed so the whole selection stitches through continuously.</param>
+
+	<effect>
+		<object-type>all</object-type>
+		<effects-menu>
+			<submenu name="Ink/Stitch" translatable="no" />
+		</effects-menu>
+	</effect>
+
+	<script>
+		<command location="inx" interpreter="python">normalize_stitch_direction.py</command>
+	</script>
+
+</inkscape-extension>

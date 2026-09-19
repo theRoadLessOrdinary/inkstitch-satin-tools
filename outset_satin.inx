@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<inkscape-extension xmlns="http://www.inkscape.org/namespace/inkscape/extension">
+
+	<name>Outset / Inset Satin Column</name>
+	<id>maps_edge.outset_satin</id>
+
+	<param name="distance" type="float" min="-1000" max="1000" precision="3" gui-text="Distance per rail (px, negative = thinner):">1.0</param>
+
+	<effect>
+		<object-type>path</object-type>
+		<effects-menu>
+			<submenu name="Ink/Stitch" translatable="no" />
+		</effects-menu>
+	</effect>
+
+	<script>
+		<command location="inx" interpreter="python">outset_satin.py</command>
+	</script>
+
+</inkscape-extension>
