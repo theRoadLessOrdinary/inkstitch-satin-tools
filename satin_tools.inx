@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<inkscape-extension xmlns="http://www.inkscape.org/namespace/inkscape/extension">
+
+	<name>Satin Rail Tools</name>
+	<id>maps_edge.satin_tools</id>
+
+	<param name="tab" type="notebook">
+
+		<page name="rungs" gui-text="Ladder Rungs">
+			<param name="rungs_help" type="description">Select one ladder (2 rails plus rungs) or two separate rail paths. Add: builds all rungs if there are none, otherwise inserts a rung between each pair of existing rungs. Decimate: removes every other rung. The 4 rungs at each end are never touched.</param>
+			<param name="rungs_mode" type="optiongroup" appearance="radio" gui-text="Mode:">
+				<option value="add">Add</option>
+				<option value="decimate">Decimate</option>
+			</param>
+		</page>
+
+		<page name="add_node" gui-text="Add Rung at Node">
+			<param name="add_node_help" type="description">In the Node tool (N), click one node on either rail at the position you want a new rung, or click two nodes on the same rail to place a rung equidistant between them, then run this.</param>
+		</page>
+
+		<page name="angle" gui-text="Angle Rungs">
+			<param name="angle_help" type="description">Select one or more satin columns (2 rails plus rungs). Every rung is set to the same angle across the column. 0 is square across. Positive leans the rungs clockwise, negative leans them counterclockwise. Rungs inside a taper are left as they are.</param>
+			<param name="angle_rungs_angle" type="float" min="-80" max="80" precision="1" gui-text="Rung angle (degrees):">30.0</param>
+		</page>
+
+		<page name="cross_splice" gui-text="Cross-Splice Rails">
+			<param name="cross_splice_help" type="description">Select 4 open strokes around one crossing to splice them into 2 rails and generate rungs in one step, or 2 strokes to just splice them into one rail. Strokes are paired by end-to-end distance, so select only the strokes at that one crossing.</param>
+		</page>
+
+		<page name="cut" gui-text="Cut Satin">
+			<param name="cut_help" type="description">Select the satin column plus a line drawn across it where you want to cut. Or, in the Node tool (N), select one node on each rail where you want to cut (or a node on just one rail to cut the other rail square across from it), then run this. The column is split into separate satin columns, each with its own rail pieces and the rungs on its side of the cut. Several cuts at once work too. Or draw a closed shape (rectangle, circle, closed path) over the column instead of a line: the column is cut where the shape crosses it, the piece inside the shape is deleted, and the shape is deleted too.</param>
+		</page>
+
+		<page name="normalize" gui-text="Normalize Direction">
+			<param name="normalize_help" type="description">Select the ladder objects in stitch order (bottom to top for the first one). Each object's rail direction is flipped as needed so the whole selection stitches through continuously.</param>
+		</page>
+
+		<page name="outset" gui-text="Outset / Inset">
+			<param name="outset_help" type="description">Select one or more satin-column paths (2 rails, rungs optional).</param>
+			<param name="outset_distance" type="float" min="-1000" max="1000" precision="3" gui-text="Distance per rail (px, negative = thinner):">1.0</param>
+		</page>
+
+	</param>
+
+	<effect>
+		<object-type>all</object-type>
+		<effects-menu>
+			<submenu name="Ink/Stitch" translatable="no" />
+		</effects-menu>
+	</effect>
+
+	<script>
+		<command location="inx" interpreter="python">satin_tools.py</command>
+	</script>
+
+</inkscape-extension>

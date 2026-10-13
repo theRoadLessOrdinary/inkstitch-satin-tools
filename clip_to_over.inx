@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<inkscape-extension xmlns="http://www.inkscape.org/namespace/inkscape/extension">
+
+	<name>Clip Under to Over</name>
+	<id>maps_edge.clip_to_over</id>
+
+	<param name="help" type="description">Select 2 satin columns meeting at one crossing: the under piece with a cut end, and the over piece it should touch. Each of the under piece's two rails is clipped exactly where it enters the over piece's real shape; the shorter rail is then extended along the over piece's near rail until it's incident with the longer rail's own end, so satin fill can reach all the way to the tip.</param>
+
+	<effect>
+		<object-type>all</object-type>
+		<effects-menu>
+			<submenu name="Ink/Stitch" translatable="no" />
+		</effects-menu>
+	</effect>
+
+	<script>
+		<command location="inx" interpreter="python">clip_to_over.py</command>
+	</script>
+
+</inkscape-extension>

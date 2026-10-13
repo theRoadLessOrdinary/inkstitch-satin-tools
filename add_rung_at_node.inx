@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<inkscape-extension xmlns="http://www.inkscape.org/namespace/inkscape/extension">
+
+	<name>Add Rung at Node</name>
+	<id>maps_edge.add_rung_at_node</id>
+
+	<param name="help" type="description">In the Node tool (N), click one node on either rail of the ladder at the position you want a new rung, then run this. Bind it to a keyboard shortcut in Preferences &gt; Interface &gt; Keyboard Shortcuts for right-click speed - Inkscape's extension system has no hook into the actual right-click menu.</param>
+
+	<effect>
+		<object-type>path</object-type>
+		<effects-menu>
+			<submenu name="Ink/Stitch" translatable="no" />
+		</effects-menu>
+	</effect>
+
+	<script>
+		<command location="inx" interpreter="python">add_rung_at_node.py</command>
+	</script>
+
+</inkscape-extension>

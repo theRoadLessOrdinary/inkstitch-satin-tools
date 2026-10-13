@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<inkscape-extension xmlns="http://www.inkscape.org/namespace/inkscape/extension">
+
+	<name>Touch Rails at Crossing</name>
+	<id>maps_edge.touch_rails</id>
+
+	<param name="help" type="description">Select 2 satin columns meeting at one crossing: the under piece with a cut end, and the over piece it should touch. The under piece's two rail tips are extended (or trimmed) independently to touch the over piece's near rail. Run once per crossing.</param>
+
+	<effect>
+		<object-type>all</object-type>
+		<effects-menu>
+			<submenu name="Ink/Stitch" translatable="no" />
+		</effects-menu>
+	</effect>
+
+	<script>
+		<command location="inx" interpreter="python">touch_rails.py</command>
+	</script>
+
+</inkscape-extension>

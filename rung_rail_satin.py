@@ -47,7 +47,12 @@ from inkex.paths import CubicSuperPath
 import bezier_geom as bg
 
 STROKE_TAPER_MULT = 4.0
-STROKE_DEFAULT_MULT = 1.0
+# Overshoot beyond each rail's CENTERLINE crossing point. A rail's outer
+# edge sits 0.5*B from its centerline, so 0.5 (to reach the edge) + 1.0
+# (requested overshoot past the edge) = 1.5 gives 1*B of clearance past
+# the actual rail stroke's outer edge, matching the node markers to the
+# rail edges as intended.
+STROKE_DEFAULT_MULT = 1.5
 STROKE_OPEN_MULT = 3.0
 MIN_FROM_POINT_MULT = 2.0
 TAPER_EXTRA_RUNG_MARGIN = 1.15
@@ -56,6 +61,21 @@ SPACING_GENTLE_MULT = 2.0
 SPACING_TIGHT_MULT = 1.0
 STRAIGHTNESS_THRESHOLD = 0.9
 N_PER_SEG = 400
+
+# Rule (user, 2026-09-24): no rung ever sits exactly at a rail end. The
+# last (closest-to-end) rung on a non-taper open end is inset this many
+# column-widths (local rail separation, not stroke width) from the end -
+# EXCEPT a genuine taper's near-the-convergence-point rung, which is
+# still required close to the tip to keep the zigzag perpendicular to the
+# rails there (governed by MIN_FROM_POINT_MULT instead, unchanged).
+END_INSET_MULT = 0.5
+
+# Every rung must be wider than the column at its own position by this
+# fraction on EACH side (0.25 total extra width), centered over the
+# column - i.e. symmetric overshoot, replacing the old asymmetric/B-based
+# overshoot multipliers above for actual rung placement (those stay only
+# as historical defaults/unused otherwise).
+RUNG_OVERSHOOT_MULT = 0.125
 
 
 def reverse_subpath(subpath):
@@ -135,8 +155,20 @@ class Rail:
         ts, arclen, _ = self._tables[i]
         t = float(np.interp(local_s, arclen, ts))
         p0, p1, p2, p3 = self.segs[i]
-        return bg.split_point(p0, p1, p2, p3, t), bg.bez_deriv(p0, p1, p2, p3, t) \
+        tangent = bg.bez_deriv(p0, p1, p2, p3, t) \
             if hasattr(bg, "bez_deriv") else self._deriv(p0, p1, p2, p3, t)
+        # Same degenerate-boundary case _boundary_tangent guards against:
+        # a straight segment's collapsed control points make the cubic
+        # derivative evaluate to exactly zero at t=0 or t=1 (found live
+        # 2026-09-24 - a short single-segment reference rail's t=0 end
+        # produced a zero tangent here, silently killing a taper rung's
+        # line_cross search with no error). Fall back to a local secant.
+        if np.linalg.norm(tangent) < 1e-9 and (t < 1e-9 or t > 1 - 1e-9):
+            near_t = 0.9 if t > 0.5 else 0.1
+            near_pt = np.array(bg.split_point(p0, p1, p2, p3, near_t))
+            end_pt = np.array(p3) if t > 0.5 else np.array(p0)
+            tangent = end_pt - near_pt if t > 0.5 else near_pt - end_pt
+        return bg.split_point(p0, p1, p2, p3, t), tangent
 
     @staticmethod
     def _deriv(p0, p1, p2, p3, t):
@@ -200,27 +232,87 @@ class Rail:
     def last_seg_length(self):
         return self.seg_bounds[-1] - self.seg_bounds[-2]
 
-    def line_cross(self, anchor, direction, s_guess=None):
+    def line_cross(self, anchor, direction, s_guess=None, _extrapolate=True, _local_window=None):
         """Where a fixed-direction line through anchor crosses this rail.
         Returns (point, s) or None."""
         L = 1e4
         line = (anchor - direction * L, anchor - direction * L,
                 anchor + direction * L, anchor + direction * L)
+
+        def segs_in_window(lo, hi):
+            for i in range(self.n):
+                if self.seg_bounds[i + 1] >= lo and self.seg_bounds[i] <= hi:
+                    yield i
+
+        def search(seg_indices):
+            found = []
+            for i in seg_indices:
+                p0, p1, p2, p3 = self.segs[i]
+                hits = bg.dedup_intersections(
+                    bg.cubic_intersect(tuple(map(tuple, line)), (tuple(p0), tuple(p1), tuple(p2), tuple(p3)))
+                )
+                ts, arclen, _ = self._tables[i]
+                for t1, t2, pt in hits:
+                    s = self.seg_bounds[i] + float(np.interp(t2, ts, arclen))
+                    found.append((s, np.array(pt)))
+            return found
+
         candidates = []
-        for i, (p0, p1, p2, p3) in enumerate(self.segs):
-            hits = bg.dedup_intersections(
-                bg.cubic_intersect(tuple(map(tuple, line)), (tuple(p0), tuple(p1), tuple(p2), tuple(p3)))
-            )
-            ts, arclen, _ = self._tables[i]
-            for t1, t2, pt in hits:
-                s = self.seg_bounds[i] + float(np.interp(t2, ts, arclen))
-                candidates.append((s, np.array(pt)))
+        # Found live 2026-09-24 (g6): a rail that loops back near itself can
+        # have a spatially-close-but-arclength-far crossing that wins purely
+        # because it's the only one *found*, even with s_guess set (s_guess
+        # only ranks candidates post-hoc, it can't rescue a search that
+        # never looked locally). When s_guess is given, search a bounded
+        # local window FIRST and use it if anything turns up there at all -
+        # only fall through to the full rail (and extrapolation) when the
+        # local window is genuinely empty.
+        if s_guess is not None:
+            window = _local_window if _local_window is not None else max(10.0 * (self.length / max(self.n, 1)), 0.15 * self.length)
+            candidates = search(segs_in_window(s_guess - window, s_guess + window))
+            if not candidates and _extrapolate:
+                # Found live 2026-09-24: a short reference rail (e.g. the
+                # unmodified side of a tight double taper) can have its true
+                # geometric crossing fall just outside its own bounded end -
+                # by construction (not a real gap in the object), not
+                # because no reasonable crossing exists. cubic_intersect's
+                # r1/r2 only relabel output parameters, they don't
+                # extrapolate the actual curve - so build a real (straight)
+                # extension segment beyond whichever boundary s_guess is
+                # nearest, using the boundary tangent, and test against
+                # that instead. Only that ONE boundary (not both) - s_guess
+                # means we already know which end we're near.
+                at_end = s_guess > self.length / 2
+                i = self.n - 1 if at_end else 0
+                seg = self.segs[i]
+                d = self._boundary_tangent(seg, at_end)
+                n = np.linalg.norm(d)
+                if n > 1e-9:
+                    u = d / n
+                    MARGIN = 0.3 * self.length
+                    boundary_pt = np.array(seg[3]) if at_end else np.array(seg[0])
+                    far_pt = boundary_pt + u * MARGIN if at_end else boundary_pt - u * MARGIN
+                    ext = (tuple(boundary_pt), tuple(boundary_pt), tuple(far_pt), tuple(far_pt)) if at_end \
+                        else (tuple(far_pt), tuple(far_pt), tuple(boundary_pt), tuple(boundary_pt))
+                    hits = bg.dedup_intersections(bg.cubic_intersect(tuple(map(tuple, line)), ext))
+                    for t1, t2, pt in hits:
+                        dist = np.linalg.norm(np.array(pt) - boundary_pt)
+                        s = (self.seg_bounds[i + 1] + dist) if at_end else (self.seg_bounds[i] - dist)
+                        candidates.append((s, np.array(pt)))
+            # Deliberately NOT falling through to a blind full-rail search
+            # here: s_guess means the caller has a specific local
+            # expectation (a rung's local partner point), and a rail that
+            # loops back near itself can otherwise "successfully" find a
+            # technically-valid but arclength-nonsensical far crossing -
+            # worse than just skipping this one optional rung.
+            if not candidates:
+                return None
+            best = min(candidates, key=lambda c: abs(c[0] - s_guess))
+            return best[1], best[0]
+
+        candidates = search(range(self.n))
         if not candidates:
             return None
-        if s_guess is None:
-            best = min(candidates, key=lambda c: np.linalg.norm(c[1] - anchor))
-        else:
-            best = min(candidates, key=lambda c: abs(c[0] - s_guess))
+        best = min(candidates, key=lambda c: np.linalg.norm(c[1] - anchor))
         return best[1], best[0]
 
 
@@ -408,10 +500,24 @@ def _build_taper(end, A, B):
     # so main-body is s<transition_s. "after" is the mirror of this.
     s_before = transition_s + (1.0 if at_start else -1.0)
     pT, _ = taper_rail.point_tangent(s_before)
-    # nearest point on plain_rail to set the perpendicular reference
+    # Nearest point on plain_rail to set the perpendicular reference.
+    # Window the search to the end plain_rail corresponds to (at_start ->
+    # its own low-s end, at_end -> its own high-s end) instead of scanning
+    # its FULL length - found live 2026-09-24 (g6): a rail that loops back
+    # near itself can have a point near one end sit spatially close to a
+    # point near the OTHER end, so a blind whole-rail nearest-Euclidean
+    # search picks the wrong (far-in-arclength) region, seeding every
+    # downstream line_cross call in this function with a bad locality no
+    # s_guess can recover from. A generous window (relative to A, the rail
+    # spacing) stays local while still comfortably covering any real taper.
+    WINDOW = max(10.0 * A, 0.25 * plain_rail.length)
+    if at_start:
+        s_lo, s_hi = 0.0, min(plain_rail.length, WINDOW)
+    else:
+        s_lo, s_hi = max(0.0, plain_rail.length - WINDOW), plain_rail.length
     best_s, best_d = None, None
     for i in range(60):
-        s = plain_rail.length * i / 59
+        s = s_lo + (s_hi - s_lo) * i / 59
         p, _ = plain_rail.point_tangent(s)
         d = np.linalg.norm(np.array(p) - np.array(pT))
         if best_d is None or d < best_d:
@@ -419,49 +525,64 @@ def _build_taper(end, A, B):
     pP, tanP = plain_rail.point_tangent(best_s)
     ref_dir = unit_normal(tanP)
 
-    def emit(pA_taper, pA_plain, overshoot_taper, overshoot_plain, offset_dir):
+    def emit(pA_taper, pA_plain, offset_dir):
+        # Symmetric overshoot: each side gets RUNG_OVERSHOOT_MULT * (the
+        # rung's own local width, i.e. the distance between the two
+        # crossing points it actually connects) - centered over the
+        # column, not the old asymmetric taper/plain split.
         d = np.array(pA_taper) - np.array(pA_plain)
         n = np.linalg.norm(d)
         u = d / n if n > 1e-9 else np.array([1.0, 0.0])
-        end_plain = np.array(pA_plain) - u * overshoot_plain
-        end_taper = np.array(pA_taper) + u * overshoot_taper
+        overshoot = RUNG_OVERSHOOT_MULT * n
+        end_plain = np.array(pA_plain) - u * overshoot
+        end_taper = np.array(pA_taper) + u * overshoot
         pt1, pt2 = (end_taper, end_plain) if which_taper == "A" else (end_plain, end_taper)
         subpaths.append([[list(pt1), list(pt1), list(pt1)], [list(pt2), list(pt2), list(pt2)]])
 
     res = plain_rail.line_cross(pT, ref_dir, s_guess=best_s)
     if res is not None:
         pP_before, _ = res
-        emit(pT, pP_before, B * STROKE_TAPER_MULT, B * STROKE_DEFAULT_MULT, ref_dir)
+        emit(pT, pP_before, ref_dir)
 
     s_after = transition_s + (-1.0 if at_start else 1.0)
     p_after, _ = taper_rail.point_tangent(s_after)
-    res = plain_rail.line_cross(p_after, ref_dir)
+    # s_guess=best_s throughout (found live 2026-09-24, g6): without it,
+    # line_cross falls back to Euclidean-nearest, which for a rail that
+    # loops back near itself can find a far-away-in-arclength crossing
+    # that just happens to sit physically close - a long spurious rung
+    # across the whole loop instead of the local one.
+    res = plain_rail.line_cross(p_after, ref_dir, s_guess=best_s)
     if res is not None:
         pP_after, _ = res
-        emit(p_after, pP_after, B * STROKE_TAPER_MULT, B * STROKE_DEFAULT_MULT, ref_dir)
+        emit(p_after, pP_after, ref_dir)
 
     if taper_len > TAPER_EXTRA_RUNG_MARGIN * A:
         s_mid = (transition_s + _rail_s_for_end(taper_rail, at_start)) / 2.0
         p_mid, _ = taper_rail.point_tangent(s_mid)
-        res = plain_rail.line_cross(p_mid, ref_dir)
+        res = plain_rail.line_cross(p_mid, ref_dir, s_guess=best_s)
         if res is not None:
             pP_mid, _ = res
-            emit(p_mid, pP_mid, B * STROKE_TAPER_MULT, B * STROKE_DEFAULT_MULT, ref_dir)
+            emit(p_mid, pP_mid, ref_dir)
 
+    # Near-the-convergence-point rung: the sanctioned exception to "never
+    # at the end" / the 0.5*A end-inset rule - an extreme taper still
+    # needs a rung close to its tip to keep the zigzag perpendicular to
+    # the rails there, so this one is governed by its own minimum
+    # clearance (MIN_FROM_POINT_MULT * B) instead of END_INSET_MULT * A.
     min_from_point = MIN_FROM_POINT_MULT * B
     point = (railA.start() if at_start else railA.end())  # approx convergence
     offset = min_from_point
     for _ in range(400):
         s_try = _step_from_end(taper_rail, at_start, offset)
         p_try, _ = taper_rail.point_tangent(s_try)
-        res = plain_rail.line_cross(p_try, ref_dir)
+        res = plain_rail.line_cross(p_try, ref_dir, s_guess=best_s)
         if res is not None:
             pP_try, _ = res
             if (np.linalg.norm(np.array(p_try) - end["pA" if which_taper == "A" else "pB"])
                     >= min_from_point and
                     np.linalg.norm(np.array(pP_try) - end["pB" if which_taper == "A" else "pA"])
                     >= min_from_point):
-                emit(p_try, pP_try, B * STROKE_TAPER_MULT, B * STROKE_DEFAULT_MULT, ref_dir)
+                emit(p_try, pP_try, ref_dir)
                 break
         offset += 0.02
 
@@ -499,7 +620,6 @@ def _build_dual_taper(end, A, B):
     f_near = min(max(min_from_point / len_A, min_from_point / len_B), 0.9)
     fractions = np.linspace(f_near, 1.0, n_rungs)
 
-    overshoot = STROKE_TAPER_MULT * B
     subpaths = []
     for f in fractions:
         pa = point_a + (trans_a - point_a) * f
@@ -509,6 +629,7 @@ def _build_dual_taper(end, A, B):
         if n < 1e-9:
             continue
         u = d / n
+        overshoot = RUNG_OVERSHOOT_MULT * n  # symmetric, local-width-based
         end_a = pa - u * overshoot
         end_b = pb + u * overshoot
         subpaths.append([[list(end_a)] * 3, [list(end_b)] * 3])
@@ -516,18 +637,34 @@ def _build_dual_taper(end, A, B):
 
 def _build_open(end, A, B):
     railA, railB, at_start = end["railA"], end["railB"], end["at_start"]
-    pullback = STROKE_OPEN_MULT * B
-    overshoot = STROKE_OPEN_MULT * B
-    open_dir = np.array(end["pB"]) - np.array(end["pA"])
-    n = np.linalg.norm(open_dir)
-    if n < 1e-9:
+    # Never-at-the-end rule: inset the last rung 0.5 * column width (A,
+    # rail separation) from the rail end, not a stroke-width-based margin.
+    pullback = END_INSET_MULT * A
+    n0 = np.linalg.norm(np.array(end["pB"]) - np.array(end["pA"]))
+    if n0 < 1e-9:
         return []
-    open_dir = open_dir / n
+    # Search is bounded by railA's own remaining length at this end - a
+    # short open segment (e.g. a curved stub) has no length to walk past,
+    # and stepping beyond it previously ran the whole 600-step search
+    # against an out-of-range s with no chance of success.
+    max_offset = railA.length
 
     def try_offset(offset, require_B_pullback):
+        if offset > max_offset:
+            return None
         s_try = _step_from_end(railA, at_start, offset)
-        pA, _ = railA.point_tangent(s_try)
-        res = railB.line_cross(pA, open_dir)
+        pA, tanA = railA.point_tangent(s_try)
+        # Local perpendicular at THIS point, not a single direction fixed
+        # at the raw endpoints - same reasoning as _build_taper's ref_dir
+        # (line ~526): on a curved open end the true perpendicular rotates
+        # as you step inward, so a fixed endpoint-to-endpoint direction
+        # can miss railB entirely even though the rails are genuinely
+        # running parallel to each other locally.
+        local_dir = unit_normal(tanA)
+        # same s_guess reasoning as _build_interior/_build_taper: bias
+        # toward railB's locally-corresponding position, not whatever
+        # happens to be Euclidean-nearest on a self-proximate rail.
+        res = railB.line_cross(pA, local_dir, s_guess=_step_from_end(railB, at_start, offset))
         if res is None:
             return None
         pB, sB = res
@@ -539,6 +676,8 @@ def _build_open(end, A, B):
         if n < 1e-9:
             return None
         u = d / n
+        # Symmetric overshoot: 0.25*local-width total, centered.
+        overshoot = RUNG_OVERSHOOT_MULT * n
         endA = np.array(pA) - u * overshoot
         endB = np.array(pB) + u * overshoot
         return [[[list(endA)] * 3, [list(endB)] * 3]]
@@ -583,7 +722,9 @@ def _build_interior(railA, railB, end0, end1, A, B):
                 # "before" rung's crossing distance from this end (rough)
                 reserved = A * 0.5 + 2.0 * B
         else:
-            reserved = STROKE_OPEN_MULT * B + 1.0
+            # Keep interior rungs clear of the open-end rung, which now
+            # sits at END_INSET_MULT * A from the rail end.
+            reserved = END_INSET_MULT * A + 1.0
         if end["at_start"]:
             lo = max(lo, reserved)
         else:
@@ -601,13 +742,28 @@ def _build_interior(railA, railB, end0, end1, A, B):
     while s < hi - spacing * 0.5:
         pA, tanA = railA.point_tangent(s)
         d = unit_normal(tanA)
-        res = railB.line_cross(pA, d)
+        # s_guess: railA and railB are roughly parallel-parametrized, so
+        # bias the search toward the LOCAL crossing at this arc-length
+        # position. Without it, line_cross defaults to Euclidean-nearest,
+        # which for a curve that loops back near itself (found live
+        # 2026-09-24, g6's looping magenta/blue strokes) can pick a
+        # crossing from a totally different, far-away part of the rail
+        # that just happens to pass physically close by - producing a
+        # long spurious rung across the whole loop instead of a local one.
+        # Scale by the two rails' total-length ratio, not a raw passthrough
+        # of s - a double-tapered piece's shorter/extended rail carries
+        # extra length from its added bend segment(s) (up to ~11% longer
+        # seen live), which drifts an unscaled guess enough to pick the
+        # wrong loop-proximate crossing again.
+        res = railB.line_cross(pA, d, s_guess=s * (railB.length / railA.length))
         if res is not None:
             pB, _ = res
             dvec = np.array(pB) - np.array(pA)
-            u = dvec / np.linalg.norm(dvec)
-            endA = np.array(pA) - u * (STROKE_DEFAULT_MULT * B)
-            endB = np.array(pB) + u * (STROKE_DEFAULT_MULT * B)
+            local_w = np.linalg.norm(dvec)
+            u = dvec / local_w
+            overshoot = RUNG_OVERSHOOT_MULT * local_w
+            endA = np.array(pA) - u * overshoot
+            endB = np.array(pB) + u * overshoot
             subpaths.append([[list(endA)] * 3, [list(endB)] * 3])
         s += spacing
 
@@ -620,15 +776,16 @@ def _build_interior(railA, railB, end0, end1, A, B):
         s_mid = (lo + hi) / 2.0
         pA, tanA = railA.point_tangent(s_mid)
         d = unit_normal(tanA)
-        res = railB.line_cross(pA, d)
+        res = railB.line_cross(pA, d, s_guess=s_mid)
         if res is not None:
             pB, _ = res
             dvec = np.array(pB) - np.array(pA)
             n = np.linalg.norm(dvec)
             if n > 1e-9:
                 u = dvec / n
-                endA = np.array(pA) - u * (STROKE_DEFAULT_MULT * B)
-                endB = np.array(pB) + u * (STROKE_DEFAULT_MULT * B)
+                overshoot = RUNG_OVERSHOOT_MULT * n
+                endA = np.array(pA) - u * overshoot
+                endB = np.array(pB) + u * overshoot
                 subpaths.append([[list(endA)] * 3, [list(endB)] * 3])
 
     return subpaths

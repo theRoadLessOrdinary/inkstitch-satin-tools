@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<inkscape-extension xmlns="http://www.inkscape.org/namespace/inkscape/extension">
+
+	<name>Weave Paths</name>
+	<id>maps_edge.weave_paths</id>
+
+	<param name="help" type="description">Select 2 or more open paths that cross each other (e.g. strands of a knot/braid) and run. Each strand is cut with gaps wherever it passes under another, alternating over/under along its own length, so the strands read as physically woven together.</param>
+
+	<effect>
+		<object-type>all</object-type>
+		<effects-menu>
+			<submenu name="Ink/Stitch" translatable="no" />
+		</effects-menu>
+	</effect>
+
+	<script>
+		<command location="inx" interpreter="python">weave_paths.py</command>
+	</script>
+
+</inkscape-extension>

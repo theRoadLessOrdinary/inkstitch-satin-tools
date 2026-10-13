@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<inkscape-extension xmlns="http://www.inkscape.org/namespace/inkscape/extension">
+
+	<name>Taper Join at Crossing</name>
+	<id>maps_edge.taper_join</id>
+
+	<param name="help" type="description">Select 2 satin columns meeting at one crossing, same as Touch Rails. If the crossing angle is more than ~5 degrees off a graze, the under piece's two rails taper together to one shared point on the over piece (separate incident subpaths, not fused) with 1-2 new rungs parallel to the first-selected path's nearest rail. Shallow grazes fall back to Touch Rails' independent-touch behavior.</param>
+
+	<effect>
+		<object-type>all</object-type>
+		<effects-menu>
+			<submenu name="Ink/Stitch" translatable="no" />
+		</effects-menu>
+	</effect>
+
+	<script>
+		<command location="inx" interpreter="python">taper_join.py</command>
+	</script>
+
+</inkscape-extension>
