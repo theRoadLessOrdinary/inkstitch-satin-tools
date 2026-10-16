@@ -9,7 +9,11 @@
 	<effect>
 		<object-type>path</object-type>
 		<effects-menu>
-			<submenu name="Ink/Stitch" translatable="no" />
+			<submenu name="Map's Edge Tools" translatable="no">
+				<submenu name="Embroidery" translatable="no">
+					<submenu name="Satin" translatable="no" />
+				</submenu>
+			</submenu>
 		</effects-menu>
 	</effect>
 

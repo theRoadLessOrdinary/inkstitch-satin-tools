@@ -9,7 +9,7 @@ Four Inkscape extensions for building and adjusting **satin column ladders** for
 | **Cross-Splice Rails** | Rejoins 2 or 4 open strokes at a crossing into rails, and builds rungs | `maps_edge.cross_splice_satin` |
 | **Normalize Stitch Direction** | Flips rail direction across several ladders so they stitch through in one continuous direction | `maps_edge.normalize_stitch_direction` |
 
-All four appear under **Extensions > Ink/Stitch**. They write the same `inkstitch:satin_column` attributes Ink/Stitch writes itself, so the result is recognized as a satin column right away. Ink/Stitch is only needed to preview and stitch the result; these tools do not call it.
+All four appear under **Extensions > Map's Edge Tools > Embroidery > Satin**. They write the same `inkstitch:satin_column` attributes Ink/Stitch writes itself, so the result is recognized as a satin column right away. Ink/Stitch is only needed to preview and stitch the result; these tools do not call it.
 
 ## Requirements
 
