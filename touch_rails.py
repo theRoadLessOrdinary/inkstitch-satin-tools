@@ -12,9 +12,11 @@ confirmed as the target look (rails touching, not floating in a gap).
 
 Select exactly 2 satin-column paths (each already exactly 2 rails, plus
 any rungs, which are identified as the two longest subpaths and left
-untouched) that meet at one crossing. Whichever of the two has an end
-sitting nearest the other's rails is the "under" piece needing fixed;
-the other is the "over" piece and is never modified. Run once per
+untouched) that meet at one crossing. Stacking order decides which is which: the
+object lower in the stacking order (earlier in the document) is the
+"under" piece needing fixed; the one above it is the "over" piece and is
+never modified. Of the under piece's two ends, the one sitting nearest
+the over piece's rails is the end that gets fixed. Run once per
 crossing that needs closing (same one-crossing-at-a-time selection model
 as Cross-Splice Rails).
 
@@ -138,7 +140,8 @@ class TouchRails(EffectExtension):
         if len(sel) != 2:
             raise inkex.AbortExtension(
                 "Select exactly 2 satin-column paths that meet at one crossing: "
-                "the under piece with a cut end, and the over piece it should touch."
+                "the under piece with a cut end, and the over piece it should touch. "
+                "The one lower in the stacking order is treated as the under piece."
             )
 
         els = []
@@ -158,26 +161,33 @@ class TouchRails(EffectExtension):
             rails, rungs = _rails_and_rungs(csp)
             data.append({"el": e, "rails": rails, "rungs": rungs})
 
-        # Find the (element, end) pair whose tip sits nearest the OTHER
-        # element's rails - that identifies the under piece and which end
-        # of it needs fixing.
-        best = None  # (dist, under_idx, at_end)
-        for i in (0, 1):
-            other = data[1 - i]["rails"]
-            for rail, _ in data[i]["rails"]:
-                for at_end in (True, False):
-                    tip = rail.end() if at_end else rail.start()
-                    d = _min_dist_point_to_rails(tip, other)
-                    if best is None or d < best[0]:
-                        best = (d, i, at_end)
-
-        _, under_idx, at_end = best
-        over_idx = 1 - under_idx
+        # Stacking order decides over vs under: document order == paint
+        # order, so the element that comes first in the document is the
+        # one underneath (same test Cut Along Shape uses for its cutter).
+        order = {id(el): i for i, el in enumerate(self.svg.iter())}
+        under_idx = 0 if order.get(id(els[0]), 0) < order.get(id(els[1]), 0) else 1
         under = data[under_idx]
-        over = data[over_idx]
+        over = data[1 - under_idx]
+
+        # Which end of the under piece needs fixing: the one whose rail
+        # tip sits nearest the over piece's rails.
+        best = None  # (dist, tip)
+        for rail, _ in under["rails"]:
+            for at_end in (True, False):
+                tip = rail.end() if at_end else rail.start()
+                d = _min_dist_point_to_rails(tip, over["rails"])
+                if best is None or d < best[0]:
+                    best = (d, np.array(tip, dtype=float))
+        near_tip = best[1]
 
         new_rail_subpaths = []
         for rail, subpath in under["rails"]:
+            # The two rails are often drawn in opposite directions (one
+            # rail's start sits beside the other's end), so "start or end"
+            # is decided per rail: whichever of its own two tips is at the
+            # end of the column being fixed.
+            at_end = (np.linalg.norm(np.array(rail.end()) - near_tip)
+                      < np.linalg.norm(np.array(rail.start()) - near_tip))
             tip = rail.end() if at_end else rail.start()
             tangent = _end_tangent(rail, at_end)
             hit = _line_hit(tip, tangent, over["rails"])

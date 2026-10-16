@@ -4,12 +4,16 @@
 	<name>Touch Rails at Crossing</name>
 	<id>maps_edge.touch_rails</id>
 
-	<param name="help" type="description">Select 2 satin columns meeting at one crossing: the under piece with a cut end, and the over piece it should touch. The under piece's two rail tips are extended (or trimmed) independently to touch the over piece's near rail. Run once per crossing.</param>
+	<param name="help" type="description">Select 2 satin columns meeting at one crossing: the under piece with a cut end, and the over piece it should touch. The object lower in the stacking order is treated as the under piece. The under piece's two rail tips are extended (or trimmed) independently to touch the over piece's near rail. Run once per crossing.</param>
 
 	<effect>
 		<object-type>all</object-type>
 		<effects-menu>
-			<submenu name="Ink/Stitch" translatable="no" />
+			<submenu name="Map's Edge Tools" translatable="no">
+				<submenu name="Embroidery" translatable="no">
+					<submenu name="Satin" translatable="no" />
+				</submenu>
+			</submenu>
 		</effects-menu>
 	</effect>
 
