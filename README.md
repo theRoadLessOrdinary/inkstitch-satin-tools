@@ -74,7 +74,9 @@ One dialog with a tab per tool: Ladder Rungs, Add Rung at Node, Angle Rungs, Cro
 
 ## Edit Ladder Rungs
 
-**Select** either one ladder (2 rail subpaths plus rungs) or two separate open rail paths. Two separate paths are combined into one: the result keeps the path that is later in the document and the other is deleted.
+**Select** one or more ladders (2 rail subpaths plus rungs) and/or separate open rail paths in pairs. Separate rails pair up in the order you Shift+click them: rails 1 and 2 become one ladder, rails 3 and 4 the next, and so on. Each pair is combined into one path: the result keeps the path that is later in the document and the other is deleted. A selected path that already has two rails is edited on its own and does not count toward the pairs. A rubber-band selection or Ctrl+A has no click order, so use Shift+click when selecting separate rails.
+
+Nothing is changed if the number of separate rails is odd, or if a pair's rails are far apart for their length (average gap more than half the longer rail's length), since that usually means a rail was clicked out of order. The message names the rails involved.
 
 **Modes**
 

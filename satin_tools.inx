@@ -7,7 +7,7 @@
 	<param name="tab" type="notebook">
 
 		<page name="rungs" gui-text="Ladder Rungs">
-			<param name="rungs_help" type="description">Select one ladder (2 rails plus rungs) or two separate rail paths. Add: builds all rungs if there are none, otherwise inserts a rung between each pair of existing rungs. Decimate: removes every other rung. The 4 rungs at each end are never touched.</param>
+			<param name="rungs_help" type="description">Select one or more ladders (2 rails plus rungs), and/or separate rail paths in pairs. Shift+click rails in order: rails 1 and 2 become one ladder, 3 and 4 the next, and so on. Add: builds all rungs if there are none, otherwise inserts a rung between each pair of existing rungs. Decimate: removes every other rung. The 4 rungs at each end are never touched.</param>
 			<param name="rungs_mode" type="optiongroup" appearance="radio" gui-text="Mode:">
 				<option value="add">Add</option>
 				<option value="decimate">Decimate</option>
