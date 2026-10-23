@@ -4,12 +4,18 @@
 	<name>Edit Ladder Rungs</name>
 	<id>maps_edge.rung_rail_satin</id>
 
-	<param name="help" type="description">Select one or more ladders (2 rails plus rungs), and/or separate rail paths in pairs. Shift+click rails in order: rails 1 and 2 become one ladder, 3 and 4 the next, and so on. Add: builds all rungs if there are none, otherwise inserts a rung between each pair of existing rungs. Decimate: removes every other rung. The 4 rungs at each end are never touched.</param>
+	<param name="help" type="description">Select one or more ladders (2 rails plus rungs), and/or separate rail paths in pairs. Shift+click rails in order: rails 1 and 2 become one ladder, 3 and 4 the next, and so on. Add: builds all rungs if there are none, otherwise inserts a rung between each pair of existing rungs. Decimate: removes every other rung. The 4 rungs at each end are never touched by Add or Decimate. Fit to rails: trims or extends every rung, keeping its position and angle, so it ends 0.125 mm past each rail. New rungs from Add also end 0.125 mm past each rail. Where a column curls back on itself, rung ends reach at most halfway across the gap to the next turn, so each rung crosses only its own two rails. Leave at least 0.6 mm between turns so the ends have room. Remove all: deletes every rung, keeping the two rails. Angle: sets every rung to this angle across the column. 0 is square across, positive leans clockwise, negative counterclockwise; rungs inside a taper are left as they are. Number subpaths: puts a tiny number beside every subpath of the selected paths, counted from 1 in path order, in a "Subpath numbers" layer that Ink/Stitch ignores, and records each subpath's coordinates on the path as mapsedge:sb0001 and so on. The numbers do not follow later edits; number again to refresh them. Remove numbers: deletes the numbers from the selected paths, or from every path when nothing is selected.</param>
 
 	<param name="mode" type="optiongroup" appearance="radio" gui-text="Mode:">
 		<option value="add">Add</option>
 		<option value="decimate">Decimate</option>
+		<option value="fit">Fit to rails</option>
+		<option value="remove">Remove all</option>
+		<option value="angle">Angle</option>
+		<option value="number">Number subpaths</option>
+		<option value="unnumber">Remove numbers</option>
 	</param>
+	<param name="angle" type="float" min="-80" max="80" precision="1" gui-text="Angle (degrees, for Angle):">30.0</param>
 
 	<effect>
 		<object-type>all</object-type>

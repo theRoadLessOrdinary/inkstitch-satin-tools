@@ -27,7 +27,6 @@ from inkex import EffectExtension
 
 from edit_ladder_rungs import EditLadderRungs
 from add_rung_at_node import AddRungAtNode
-from angle_rungs import AngleRungs
 from cross_splice_satin import CrossSpliceSatin
 from cut_satin_at_nodes import CutSatinAtNodes
 from normalize_stitch_direction import NormalizeStitchDirection
@@ -39,7 +38,7 @@ class SatinTools(EffectExtension):
         pars.add_argument("--tab", default="rungs")
         pars.add_argument("--rungs_mode", default="add")
         pars.add_argument("--outset_distance", type=float, default=1.0)
-        pars.add_argument("--angle_rungs_angle", type=float, default=30.0)
+        pars.add_argument("--rungs_angle", type=float, default=30.0)
 
     def effect(self):
         tab = self.options.tab
@@ -47,17 +46,12 @@ class SatinTools(EffectExtension):
         if tab == "rungs":
             tool = EditLadderRungs()
             tool.svg = self.svg
-            tool.options = Namespace(mode=self.options.rungs_mode)
+            tool.options = Namespace(mode=self.options.rungs_mode, angle=self.options.rungs_angle)
 
         elif tab == "add_node":
             tool = AddRungAtNode()
             tool.svg = self.svg
             tool.options = Namespace(selected_nodes=self.options.selected_nodes)
-
-        elif tab == "angle":
-            tool = AngleRungs()
-            tool.svg = self.svg
-            tool.options = Namespace(angle=self.options.angle_rungs_angle)
 
         elif tab == "cross_splice":
             tool = CrossSpliceSatin()

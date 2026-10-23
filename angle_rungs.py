@@ -31,7 +31,7 @@ import numpy as np
 import inkex
 from inkex import EffectExtension, PathElement
 
-from rung_rail_satin import Rail, make_csp, unit_normal
+from rung_rail_satin import Rail, make_csp, unit_normal, rails_first
 
 TAPER_ANGLE_DEG = 20.0
 
@@ -141,7 +141,7 @@ class AngleRungs(EffectExtension):
         kept = []
 
         for el in sel:
-            csp = [list(sp) for sp in el.path.to_absolute().to_superpath()]
+            csp = rails_first([list(sp) for sp in el.path.to_absolute().to_superpath()])
             if len(csp) < 3:
                 raise inkex.AbortExtension(
                     f"{el.get_id()} needs two rail subpaths plus at least one rung.")

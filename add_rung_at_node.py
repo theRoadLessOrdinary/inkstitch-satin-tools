@@ -72,15 +72,8 @@ def _s_of_nearest(rail, q):
     return best_s
 
 
-def find_rail_indices(csp):
-    """Rails aren't reliably subpaths 0 and 1 - tools like Edit Ladder Rungs
-    and Outset/Inset can leave rungs interleaved with, or ahead of, the
-    rails in the path's subpath order. Rails are always the two LONGEST
-    subpaths by arc length (rungs are only ever a few multiples of the
-    stroke width), so identify them that way instead of by position."""
-    lengths = [Rail(sp).length for sp in csp]
-    order = sorted(range(len(csp)), key=lambda i: lengths[i], reverse=True)
-    return sorted(order[:2])
+# Shared with the other satin tools; kept importable from here (Cut Satin uses it).
+from rung_rail_satin import find_rail_indices
 
 
 def _validate_rail(csp, sp):

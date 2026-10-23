@@ -26,7 +26,7 @@ import numpy as np
 import inkex
 from inkex import EffectExtension, PathElement
 
-from rung_rail_satin import reverse_subpath, make_csp
+from rung_rail_satin import reverse_subpath, make_csp, rails_first
 
 
 class NormalizeStitchDirection(EffectExtension):
@@ -42,7 +42,7 @@ class NormalizeStitchDirection(EffectExtension):
 
         prev_end = None
         for i, el in enumerate(sel):
-            csp = el.path.to_absolute().to_superpath()
+            csp = rails_first(el.path.to_absolute().to_superpath())
             if len(csp) < 2:
                 raise inkex.AbortExtension(
                     f"{el.get_id()} does not have two rail subpaths - build its rungs first."

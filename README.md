@@ -84,19 +84,27 @@ Nothing is changed if the number of separate rails is odd, or if a pair's rails 
   - With only the two rails and no rungs yet, this builds the full set of rungs (see the rules below).
   - With rungs already present, it inserts one new rung midway between every adjacent pair of rungs, which halves the spacing. Run it again to halve it again.
 - **Decimate** removes every other rung, keeping the 1st, 3rd, 5th and so on. Run it again to thin further.
+- **Fit to rails** trims or extends every rung so it ends 0.125 mm past each rail, keeping the rung's position and angle. The overshoot is the same as new rungs get: 0.125 mm past each rail, on each side. Use it after moving or resizing rails. All rungs are fitted, including the 4 at each end. A rung whose line no longer crosses both rails is left as it is, and the tool says how many.
+- **Curls:** where a column curls back on itself, a rung end runs at most halfway across the gap to the next turn, so each rung crosses only its own two rails (Ink/Stitch misreads the width otherwise). This applies to new rungs and to Fit to rails. Leave at least 0.6 mm between turns, about 1.5 times an average Floriani thread, so the ends have room. The tool does not check the gap: getting it wide enough is up to the designer. A rung must also lie inside the column between its two rails and cross no other rail on the way; near a curl's center the tool skips any spot where it would reach across the gap instead, such as two rail tips facing each other across it. At a curl-back, where a rail bends back across a rung's way so the rung meets that same rail a second time before it reaches the other rail, the rung ends at that second crossing: it crosses the one rail twice, which is right there.
+- **Remove all** deletes every rung and keeps the two rails, including the rungs at each end that Add and Decimate never touch.
+- **Angle** sets every rung to the Degrees setting across the column (formerly the separate Angle Rungs tool, which is now a Ladder Rungs mode). 0 is square across, positive leans clockwise. Rungs inside a taper, and any that would run off the column or cross another rung, are left as they are.
+- **Number subpaths** puts a tiny number beside each subpath of the selected paths, counted from 1 in the order they appear in the path's d, in a "Subpath numbers" layer carrying Ink/Stitch's ignore-layer command. The path also gets one attribute per subpath, mapsedge:sb0001 and so on, holding that subpath's coordinates; each number carries mapsedge:of (the path id) and mapsedge:sb. The numbers are a snapshot: number again after editing. Numbering again replaces the old numbers and says if they had gone out of date.
+- **Remove numbers** deletes the numbers and attributes from the selected paths, or from every path when nothing is selected, and removes the layer once it is empty.
 
 **Protected ends.** The first 4 and last 4 rungs (in order along the rails) are never touched by Add or Decimate, so tapers and end treatments stay as they were generated. Add needs at least 8 rungs to have any gap to fill; Decimate needs at least 10 rungs before it removes anything. When there is nothing to do, the tool says so and leaves the path unchanged.
 
-Rungs inserted by Add run perpendicular to the first rail at the midpoint and overshoot each rail by 1 x the stroke width.
+Rungs inserted by Add go halfway between their two neighbors on both rails, at the same both-rails pairing the full build uses (see below), and end 0.125 mm past each rail.
 
 **How the first build works.** In the rules below, A is the measured rail-to-rail distance (the median across the middle 70% of the rail) and B is the path's stroke width (0.254 if none is set).
 
-- Rungs are perpendicular to the local rail tangent, except inside a taper, where they run parallel to the last non-taper rung.
+- Body rungs join matching points on the two rails, chosen so each rung is as close to square to **both** rails as it can be. The matching only ever moves forward along each rail, so rungs never cross and never jump to another turn of a rail that curls. On parallel rails this is the same as square across. Where both rails curve around a common center, as in a curl or spiral, the rungs fan out like spokes. Inside a taper, rungs run parallel to the last non-taper rung.
 - A **taper** is detected from the path structure: at an end where one rail has more than one segment and its last segment lands at that end, that last segment is the taper. It does not matter whether the segment is straight or curved.
 - A taper zone gets 3 rungs, placed no closer than 2B to the convergence point on either rail. A 4th rung is added in the middle only when the taper is clearly longer than A (over 1.15 x A).
-- Taper rungs overshoot by 1B on the non-taper rail and 8B on the taper rail, so the node marker there does not hide them.
-- An end with no taper gets one final rung parallel to the straight line between the two raw endpoints, pulled back at least 4B from both rails, overshooting 4B on both sides.
-- Interior rungs are spaced 2A apart on gentle curves and straights, and 1A apart on tighter curves. Default overshoot is 1B on both sides.
+- Every rung, taper and end rungs included, ends 0.125 mm past each rail on both sides. Where a column curls back on itself, an end can be shorter (see Curls above).
+- An end where the rails meet at a point without a corner (a smooth tip, such as the tail of a curl) is treated like a taper: the body rungs continue right down into the tip, and the last one sits where the column is still at least 4B wide, at least 2B from the point.
+- An end with no taper whose rails do not meet gets one final rung parallel to the straight line between the two raw endpoints, pulled back at least 4B from both rails.
+- Body rungs are spaced 3A apart on gentle curves and straights, and 1A apart on tighter curves, measured along whichever rail is moving faster at that point (the outside of a curve).
+- The two rails are the two longest subpaths, wherever they sit in the path; every other subpath is a rung. Ladder Rungs, Angle Rungs and Normalize Direction put the rails first when they rewrite a path.
 - Rails drawn in opposite directions are detected and normalized before rungs are built.
 
 Treat a first build as a draft. The taper classification and the 3-versus-4 rung threshold are heuristics worked out against a small set of real designs, so check the ends.

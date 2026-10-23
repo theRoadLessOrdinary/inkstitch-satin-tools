@@ -20,14 +20,24 @@ two rails, following a rule set worked out by hand on real satin designs:
    to the convergence point as possible while staying >= 2B from it on
    BOTH rails). A 4th "middle of taper" rung only if the taper's arc
    length is clearly longer than A (> 1.15*A).
- - Taper rungs overshoot 1*B on the non-taper rail's crossing, and 8*B on
-   the taper rail's crossing (so the node marker there doesn't hide it).
  - An end with no taper on either rail (gap there is close to A, not a
    near-convergence) gets one final rung parallel to the straight line
    between the two raw endpoints, pulled back >=4*B from them on both
-   rails, overshooting 4*B on both sides.
- - Interior spacing: 2*A on gentle curves/straights, 1*A on tighter curves,
-   default 1*B overshoot both sides.
+   rails.
+ - Interior spacing: 3*A on gentle curves/straights, 1*A on tighter curves.
+ - Every rung ends RUNG_OVERSHOOT_MM (0.125 mm) past each rail, unless
+   clear_rung_ends shortens it where the column curls back on itself.
+ - Interior rungs join PAIRED points on the two rails, not a line square to
+   one rail: pair_rails() matches the rails end to end so each rung is as
+   near square to both rails as it can be, never going back along either
+   rail. Where both rails curve around a common center (a curl, a spiral)
+   the rungs fan like spokes, and none can cross another or jump to a
+   different turn of a curling rail. On parallel rails this gives the same
+   square rungs as before.
+ - An end where the rails meet at a point without a corner (a smooth tip,
+   e.g. the tail of a curl) is a "point" end: the paired rungs run right
+   down into the tip, the last one where the column is still at least
+   POINT_MIN_WIDTH_MULT * B wide and MIN_FROM_POINT_MULT * B from the point.
 
 This is a from-scratch implementation of that rule set, checked against a
 small number of real objects and not independently verified beyond that. Treat its output as a draft to
@@ -39,6 +49,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import math
 import numpy as np
 import inkex
 from inkex import EffectExtension, ShapeElement, PathElement
@@ -57,7 +68,7 @@ STROKE_OPEN_MULT = 3.0
 MIN_FROM_POINT_MULT = 2.0
 TAPER_EXTRA_RUNG_MARGIN = 1.15
 TAPER_MAX_A_MULT = 3.0
-SPACING_GENTLE_MULT = 2.0
+SPACING_GENTLE_MULT = 3.0
 SPACING_TIGHT_MULT = 1.0
 STRAIGHTNESS_THRESHOLD = 0.9
 N_PER_SEG = 400
@@ -70,12 +81,28 @@ N_PER_SEG = 400
 # rails there (governed by MIN_FROM_POINT_MULT instead, unchanged).
 END_INSET_MULT = 0.5
 
-# Every rung must be wider than the column at its own position by this
-# fraction on EACH side (0.25 total extra width), centered over the
-# column - i.e. symmetric overshoot, replacing the old asymmetric/B-based
+# Every rung ends this many mm past each rail crossing, the same on both
+# sides whatever the column width - replacing the old asymmetric/B-based
 # overshoot multipliers above for actual rung placement (those stay only
-# as historical defaults/unused otherwise).
-RUNG_OVERSHOOT_MULT = 0.125
+# as historical defaults/unused otherwise). clear_rung_ends can still
+# shorten an end where a column curls back on itself.
+RUNG_OVERSHOOT_MM = 0.125
+# A rung ending on its own rail at a curl-back must cross that rail at
+# 30 degrees or more at both ends (sine of the angle), or it is a graze.
+CURL_BACK_MIN_SIN = 0.5
+
+# A point end's closest rung sits where the column is at least this many
+# stroke widths wide, so it still clearly crosses both rails.
+POINT_MIN_WIDTH_MULT = 4.0
+
+# pair_rails: samples per rail are about 1 per this fraction of A (column
+# width), between PAIR_MIN_SAMPLES and PAIR_MAX_SAMPLES. PAIR_DIST_WEIGHT is
+# a small pull toward nearer partners, so a choice between equally square
+# pairings goes to the shorter rung.
+PAIR_SAMPLE_A_FRACTION = 0.1
+PAIR_MIN_SAMPLES = 60
+PAIR_MAX_SAMPLES = 400
+PAIR_DIST_WEIGHT = 0.02
 
 
 def reverse_subpath(subpath):
@@ -100,6 +127,27 @@ def normalize_rail_directions(csp0, csp1):
     if opp_dir < same_dir:
         return csp0, reverse_subpath(csp1)
     return csp0, csp1
+
+
+def find_rail_indices(csp):
+    """Rails aren't reliably subpaths 0 and 1 - a hand-edited ladder, or one
+    another tool rewrote, can have rungs ahead of or between the rails. A
+    rung is never longer than a rail, so the rails are the two LONGEST
+    subpaths by arc length. Returned in their order in the path."""
+    lengths = [Rail(sp).length for sp in csp]
+    order = sorted(range(len(csp)), key=lambda i: lengths[i], reverse=True)
+    return sorted(order[:2])
+
+
+def rails_first(csp):
+    """The same subpaths with the two rails moved to the front (in their own
+    order) and every rung after them, so csp[0], csp[1] are the rails and
+    csp[2:] the rungs. Written back, Ink/Stitch and every tool see that order."""
+    csp = list(csp)
+    if len(csp) <= 2:
+        return csp
+    ia, ib = find_rail_indices(csp)
+    return [csp[ia], csp[ib]] + [sp for i, sp in enumerate(csp) if i not in (ia, ib)]
 
 
 def make_csp(subpaths):
@@ -316,6 +364,134 @@ class Rail:
         return best[1], best[0]
 
 
+def pair_rails(railA, railB, A):
+    """Match points along railA to points along railB, start to end, so the
+    line joining each matched pair is as near square to BOTH rails as
+    possible. Both rails only ever move forward (dynamic time warping), so
+    two rungs taken from these pairs can never cross, and a rung can't jump
+    to another turn of a rail that curls around. Expects the rails to run in
+    the same direction (normalize_rail_directions). Returns a list of
+    (sA, sB, pA, pB) from the start end to the finish end."""
+    def samples(rail):
+        m = int(rail.length / max(A * PAIR_SAMPLE_A_FRACTION, 1e-9)) + 1
+        m = max(PAIR_MIN_SAMPLES, min(PAIR_MAX_SAMPLES, m))
+        ss = np.linspace(0.0, rail.length, m)
+        pts, tans = [], []
+        for v in ss:
+            p, t = rail.point_tangent(v)
+            t = np.array(t, dtype=float)
+            n = np.linalg.norm(t)
+            pts.append(np.array(p, dtype=float))
+            tans.append(t / n if n > 1e-12 else np.array([1.0, 0.0]))
+        return ss, np.array(pts), np.array(tans)
+
+    sA, PA, TA = samples(railA)
+    sB, PB, TB = samples(railB)
+    V = PB[None, :, :] - PA[:, None, :]
+    D = np.linalg.norm(V, axis=2)
+    U = V / np.maximum(D, 1e-9)[:, :, None]
+    # (cos of the angle to each rail)^2: 0 when the rung is square to it.
+    cost = (np.einsum('ijk,ik->ij', U, TA) ** 2 + np.einsum('ijk,jk->ij', U, TB) ** 2
+            + PAIR_DIST_WEIGHT * (D / max(A, 1e-9)) ** 2)
+    cost[D < 1e-6] = 0.0
+
+    nA, nB = len(sA), len(sB)
+    acc = np.full((nA, nB), np.inf)
+    back = np.zeros((nA, nB), dtype=np.int8)  # 0 both moved, 1 only A, 2 only B
+    acc[0, 0] = cost[0, 0]
+    for i in range(nA):
+        row, prev = acc[i], acc[i - 1] if i else None
+        for j in range(nB):
+            if i == 0 and j == 0:
+                continue
+            best, b = np.inf, 0
+            if i and j and prev[j - 1] < best:
+                best, b = prev[j - 1], 0
+            if i and prev[j] < best:
+                best, b = prev[j], 1
+            if j and row[j - 1] < best:
+                best, b = row[j - 1], 2
+            row[j] = best + cost[i, j]
+            back[i, j] = b
+    pairs = []
+    i, j = nA - 1, nB - 1
+    while True:
+        pairs.append((float(sA[i]), float(sB[j]), PA[i], PB[j]))
+        if i == 0 and j == 0:
+            break
+        b = back[i, j]
+        if b == 0:
+            i, j = i - 1, j - 1
+        elif b == 1:
+            i -= 1
+        else:
+            j -= 1
+    pairs.reverse()
+    return pairs
+
+
+def pair_progress(pairs):
+    """Distance along the column at each pair from pair_rails, counted along
+    whichever rail moved more at each step (the outside of a curve)."""
+    progress = [0.0]
+    for k in range(1, len(pairs)):
+        progress.append(progress[-1] + max(abs(pairs[k][0] - pairs[k - 1][0]),
+                                           abs(pairs[k][1] - pairs[k - 1][1])))
+    return progress
+
+
+def pair_of_rung(pairs, rung):
+    """Index of the pair whose two points both lie closest to this rung's
+    line segment: the rung's place along the column. Works on a curl, where a
+    rung's end can sit next to a different turn of a rail."""
+    a = np.array(rung[0][1], dtype=float)
+    b = np.array(rung[-1][1], dtype=float)
+    ab = b - a
+    denom = float(np.dot(ab, ab)) or 1e-12
+
+    def dist(P):
+        t = np.clip((P - a) @ ab / denom, 0.0, 1.0)
+        return np.linalg.norm(P - (a + np.outer(t, ab)), axis=1)
+
+    PA = np.array([q[2] for q in pairs])
+    PB = np.array([q[3] for q in pairs])
+    return int(np.argmin(dist(PA) + dist(PB)))
+
+
+def overshoot_uu(el):
+    """RUNG_OVERSHOOT_MM in el's own path units: document mm to user units,
+    then divided by the scale of every transform above the path.
+    viewport_to_unit, not unittouu: unittouu falls back to px when the
+    width/viewBox ratio is not a whole unit (e.g. 1 user unit = 0.5 mm)."""
+    over = el.root.viewport_to_unit(f"{RUNG_OVERSHOOT_MM}mm")
+    (a, c, _), (b, d, _) = el.composed_transform().matrix
+    scale = math.sqrt(abs(a * d - b * c))
+    return over / scale if scale > 1e-12 else over
+
+
+def rung_between(pA, pB, over):
+    """A rung subpath joining pA and pB, running `over` (path units) past
+    each. None if the points coincide."""
+    dvec = np.array(pB, dtype=float) - np.array(pA, dtype=float)
+    n = np.linalg.norm(dvec)
+    if n < 1e-9:
+        return None
+    u = dvec / n
+    endA = np.array(pA, dtype=float) - u * over
+    endB = np.array(pB, dtype=float) + u * over
+    return [[list(endA)] * 3, [list(endB)] * 3]
+
+
+def longer_first(csp0, csp1):
+    """The two rails with the longer one first. The width (measure_A) is
+    measured along the first rail, so a short inner rail hugging one turn of
+    a long curl would otherwise read as a hairline width and pack the column
+    with hundreds of rungs; the result must not depend on the path's order."""
+    if Rail(csp1).length > Rail(csp0).length:
+        return csp1, csp0
+    return csp0, csp1
+
+
 def measure_A(railA, railB):
     ts = np.linspace(0.15, 0.85, 200)
     pts_all_B = []
@@ -338,6 +514,163 @@ def stroke_width(el):
         return 0.254
 
 
+def rail_polyline(rail, step):
+    """Points along a rail, about `step` apart."""
+    n = max(2, int(math.ceil(rail.length / step)) + 1)
+    return np.array([rail.point_tangent(s)[0] for s in np.linspace(0.0, rail.length, n)], dtype=float)
+
+
+def _ray_hits(origin, u, segs):
+    """Signed distances along the line origin + t*u where it crosses segs
+    (an (N, 2, 2) array), sorted."""
+    p, q = segs[:, 0, :], segs[:, 1, :]
+    e = q - p
+    den = u[0] * e[:, 1] - u[1] * e[:, 0]
+    ok = np.abs(den) > 1e-12
+    w = p - origin
+    t = np.where(ok, (w[:, 0] * e[:, 1] - w[:, 1] * e[:, 0]) / np.where(ok, den, 1.0), 0.0)
+    v = np.where(ok, (w[:, 0] * u[1] - w[:, 1] * u[0]) / np.where(ok, den, 1.0), -1.0)
+    hit = ok & (v >= 0.0) & (v <= 1.0)
+    return np.unique(np.round(t[hit], 9))
+
+
+def column_outline(railA, railB):
+    """The column as one closed outline: railA out, railB back. Both rails
+    must run the same way (normalize_rail_directions). Returns the outline
+    points and, for each outline edge, which rail it belongs to: 0 for
+    railA, 1 for railB, -1 for the two closing edges across the ends."""
+    step = max(min(railA.length, railB.length) / 2000.0, 1e-6)
+    pa = rail_polyline(railA, step)
+    pb = rail_polyline(railB, step)[::-1]
+    pts = np.concatenate([pa, pb], axis=0)
+    owner = np.concatenate([np.zeros(len(pa) - 1, int), [-1], np.ones(len(pb) - 1, int), [-1]])
+    along = np.concatenate([[0.0], np.cumsum(np.linalg.norm(np.diff(pts, axis=0), axis=1))])
+    return pts, owner, along
+
+
+def inside_outline(outline, pts):
+    """Which of pts lie inside the closed outline (even-odd rule)."""
+    pts = np.asarray(pts, dtype=float)
+    a = outline[0]
+    b = np.roll(a, -1, axis=0)
+    x, y = pts[:, 0][:, None], pts[:, 1][:, None]
+    ay, by = a[:, 1][None, :], b[:, 1][None, :]
+    ax, bx = a[:, 0][None, :], b[:, 0][None, :]
+    straddle = (ay > y) != (by > y)
+    dy = np.where(by == ay, 1.0, by - ay)
+    xcross = ax + (y - ay) * (bx - ax) / dy
+    return (np.sum(straddle & (x < xcross), axis=1) % 2) == 1
+
+
+def _hits_with_owner(outline, p, u):
+    """(distance along p + t*u, rail) for every outline edge the line crosses."""
+    pts, owner = outline[0], outline[1]
+    q = np.roll(pts, -1, axis=0)
+    e = q - pts
+    den = u[0] * e[:, 1] - u[1] * e[:, 0]
+    ok = np.abs(den) > 1e-12
+    w = pts - p
+    safe = np.where(ok, den, 1.0)
+    t = (w[:, 0] * e[:, 1] - w[:, 1] * e[:, 0]) / safe
+    v = (w[:, 0] * u[1] - w[:, 1] * u[0]) / safe
+    hit = ok & (v >= 0.0) & (v <= 1.0)
+    order = np.argsort(t[hit])
+    return t[hit][order], owner[hit][order]
+
+
+def rung_span(outline, pA, pB):
+    """The rung for rail points pA (railA) and pB (railB), as its two rail
+    points, or None if it does not cross the column cleanly.
+
+    Normally nothing lies between pA and pB. At a curl-back a rail bends
+    across the rung's way, so the rung meets that same rail a second time
+    before it reaches the other one: the rung then ends at that second
+    crossing. Anything else in the way (the other rail first, or the gap
+    across the rail ends) fails, as does a stretch that is not inside the
+    column."""
+    pA = np.array(pA, dtype=float)
+    pB = np.array(pB, dtype=float)
+    n = np.linalg.norm(pB - pA)
+    if n < 1e-9:
+        return None
+    u = (pB - pA) / n
+    t, who = _hits_with_owner(outline, pA, u)
+    eps = 0.02 * n
+    between = (t > eps) & (t < n - eps)
+    t, who = t[between], who[between]
+    if len(t):
+        if who[0] == 0:
+            pB = pA + t[0] * u           # railA curls back: stop at it
+            rail = 0
+        elif who[-1] == 1:
+            pA = pA + t[-1] * u          # railB curls back: start at it
+            rail = 1
+        else:
+            return None
+        m = np.linalg.norm(pB - pA)
+        if m < 1e-9:
+            return None
+        # A real curl-back crosses the rail squarely enough at both ends; a
+        # line that only grazes the outside of a bend meets it at a slant.
+        pts, owner = outline[0], outline[1]
+        idx = np.nonzero(owner == rail)[0]
+        w = (pB - pA) / m
+        for q in (pA, pB):
+            i = idx[np.argmin(np.linalg.norm(pts[idx] - q, axis=1))]
+            tan = pts[(i + 1) % len(pts)] - pts[i]
+            tn = np.linalg.norm(tan)
+            if tn > 1e-12 and abs(w[0] * tan[1] - w[1] * tan[0]) / tn < CURL_BACK_MIN_SIN:
+                return None
+        t2, _ = _hits_with_owner(outline, pA, (pB - pA) / m)
+        if np.any((t2 > 0.02 * m) & (t2 < 0.98 * m)):
+            return None
+    ts = np.linspace(0.15, 0.85, 8)
+    if not np.all(inside_outline(outline, pA[None, :] + ts[:, None] * (pB - pA)[None, :])):
+        return None
+    return pA, pB
+
+
+def rung_in_column(outline, pA, pB):
+    """True when rung_span finds a clean rung for these rail points."""
+    return rung_span(outline, pA, pB) is not None
+
+
+def clear_rung_ends(rungs, railA, railB):
+    """Keep each rung's ends off the neighboring turn of a curl. A rung keeps
+    the stretch between its own two rails; past each rail its end may run
+    at most halfway across the gap to the next rail its line meets, so it
+    crosses only its own two rails. Leaving enough gap for the ends is the
+    designer's job (the help text suggests 0.6 mm)."""
+    step = max(min(railA.length, railB.length) / 4000.0, 1e-6)
+    pts = [rail_polyline(railA, step), rail_polyline(railB, step)]
+    segs = np.concatenate([np.stack([p[:-1], p[1:]], axis=1) for p in pts], axis=0)
+    out = []
+    for r in rungs:
+        e0 = np.array(r[0][1], dtype=float)
+        e1 = np.array(r[-1][1], dtype=float)
+        n = np.linalg.norm(e1 - e0)
+        if len(r) != 2 or n < 1e-9:
+            out.append(r)
+            continue
+        u = (e1 - e0) / n
+        mid = (e0 + e1) / 2.0
+        ts = _ray_hits(mid, u, segs)
+        neg, pos = ts[ts < 0], ts[ts > 0]
+        if not len(neg) or not len(pos):
+            out.append(r)
+            continue
+        ends = []
+        for side, hits in ((-1, -neg[::-1]), (1, pos)):
+            own = hits[0]
+            over = max(0.0, n / 2.0 - own)
+            beyond = hits[1:][hits[1:] > own + 1e-9]
+            if len(beyond):
+                over = min(over, (beyond[0] - own) / 2.0)
+            ends.append(mid + side * (own + over) * u)
+        out.append([[list(ends[0])] * 3, [list(ends[1])] * 3])
+    return out
+
+
 def apply_rungs(path_el):
     """Given a path element with exactly 2 rail subpaths, build and append
     the rung geometry and mark it as an Ink/Stitch satin column. Shared by
@@ -349,11 +682,12 @@ def apply_rungs(path_el):
             f"Expected exactly 2 rails (subpaths) on the combined path, found {len(csp)}."
         )
 
-    csp0, csp1 = normalize_rail_directions(csp[0], csp[1])
+    csp0, csp1 = normalize_rail_directions(*longer_first(csp[0], csp[1]))
     railA = Rail(csp0)
     railB = Rail(csp1)
     B = stroke_width(path_el)
     A = measure_A(railA, railB)
+    over = overshoot_uu(path_el)
 
     new_subpaths = []
 
@@ -363,13 +697,15 @@ def apply_rungs(path_el):
 
     for end in (end0, end1):
         if end["type"] == "taper" and end["dual"]:
-            new_subpaths.extend(_build_dual_taper(end, A, B))
+            new_subpaths.extend(_build_dual_taper(end, A, B, over))
         elif end["type"] == "taper":
-            new_subpaths.extend(_build_taper(end, A, B))
-        else:
-            new_subpaths.extend(_build_open(end, A, B))
+            new_subpaths.extend(_build_taper(end, A, B, over))
+        elif end["type"] == "open":
+            new_subpaths.extend(_build_open(end, A, B, over))
+        # a point end's rungs come from _build_interior's pairing
 
-    new_subpaths.extend(_build_interior(railA, railB, end0, end1, A, B))
+    new_subpaths.extend(_build_interior(railA, railB, end0, end1, A, B, over))
+    new_subpaths = clear_rung_ends(new_subpaths, railA, railB)
 
     path_el.path = make_csp(list(csp) + new_subpaths).to_path()
 
@@ -467,8 +803,11 @@ def _classify_end(railA, railB, at_start, A):
         # tapers there's no single well-defined perpendicular reference
         # direction to fall back on anyway.
         is_dual = is_taper and len(candidates) == 2
+        # The rails meet (or nearly) without a corner: a smooth point, like
+        # the tail of a curl. The paired interior rungs run into it.
+        is_point = not is_taper and gap < 0.35 * A
         return {
-            "type": "taper" if is_taper else "open",
+            "type": "taper" if is_taper else ("point" if is_point else "open"),
             "dual": is_dual,
             "at_start": at_start,
             "railA": railA, "railB": railB,
@@ -484,7 +823,7 @@ def _step_from_end(rail, at_start, delta):
     s0 = _rail_s_for_end(rail, at_start)
     return s0 + delta if at_start else s0 - delta
 
-def _build_taper(end, A, B):
+def _build_taper(end, A, B, over):
     railA, railB, at_start = end["railA"], end["railB"], end["at_start"]
     which_taper = end["taper_rail"]
     taper_rail = railA if which_taper == "A" else railB
@@ -526,14 +865,13 @@ def _build_taper(end, A, B):
     ref_dir = unit_normal(tanP)
 
     def emit(pA_taper, pA_plain, offset_dir):
-        # Symmetric overshoot: each side gets RUNG_OVERSHOOT_MULT * (the
-        # rung's own local width, i.e. the distance between the two
-        # crossing points it actually connects) - centered over the
-        # column, not the old asymmetric taper/plain split.
+        # Symmetric overshoot: each side runs `over` (RUNG_OVERSHOOT_MM in
+        # path units) past the crossing point it connects - centered over
+        # the column, not the old asymmetric taper/plain split.
         d = np.array(pA_taper) - np.array(pA_plain)
         n = np.linalg.norm(d)
         u = d / n if n > 1e-9 else np.array([1.0, 0.0])
-        overshoot = RUNG_OVERSHOOT_MULT * n
+        overshoot = over
         end_plain = np.array(pA_plain) - u * overshoot
         end_taper = np.array(pA_taper) + u * overshoot
         pt1, pt2 = (end_taper, end_plain) if which_taper == "A" else (end_plain, end_taper)
@@ -588,7 +926,7 @@ def _build_taper(end, A, B):
 
     return subpaths
 
-def _build_dual_taper(end, A, B):
+def _build_dual_taper(end, A, B, over):
     """Both rails genuinely taper into the same point. There's no
     single well-defined plain-rail tangent to use as a perpendicular
     reference here, so instead: treat each taper as a straight chord
@@ -629,13 +967,13 @@ def _build_dual_taper(end, A, B):
         if n < 1e-9:
             continue
         u = d / n
-        overshoot = RUNG_OVERSHOOT_MULT * n  # symmetric, local-width-based
+        overshoot = over  # symmetric, RUNG_OVERSHOOT_MM past each rail
         end_a = pa - u * overshoot
         end_b = pb + u * overshoot
         subpaths.append([[list(end_a)] * 3, [list(end_b)] * 3])
     return subpaths
 
-def _build_open(end, A, B):
+def _build_open(end, A, B, over):
     railA, railB, at_start = end["railA"], end["railB"], end["at_start"]
     # Never-at-the-end rule: inset the last rung 0.5 * column width (A,
     # rail separation) from the rail end, not a stroke-width-based margin.
@@ -676,8 +1014,8 @@ def _build_open(end, A, B):
         if n < 1e-9:
             return None
         u = d / n
-        # Symmetric overshoot: 0.25*local-width total, centered.
-        overshoot = RUNG_OVERSHOOT_MULT * n
+        # Symmetric overshoot: RUNG_OVERSHOOT_MM past each rail.
+        overshoot = over
         endA = np.array(pA) - u * overshoot
         endB = np.array(pB) + u * overshoot
         return [[[list(endA)] * 3, [list(endB)] * 3]]
@@ -708,11 +1046,16 @@ def _build_open(end, A, B):
     )
     return []
 
-def _build_interior(railA, railB, end0, end1, A, B):
+def _build_interior(railA, railB, end0, end1, A, B, over):
+    """Rungs along the body of the column, from the both-rails pairing
+    (pair_rails), spaced along whichever rail is moving faster at each point
+    (the outside of a curve). Taper and open ends keep the zone their own
+    builders use; a point end's rungs run right down into the tip."""
     lo = 0.0
     hi = railA.length
     for end in (end0, end1):
-        reserved = None
+        if end["type"] == "point":
+            continue
         if end["type"] == "taper":
             if end["taper_rail"] == "A":
                 # reserved zone measured on railA directly (it's the taper rail)
@@ -737,57 +1080,84 @@ def _build_interior(railA, railB, end0, end1, A, B):
     straightness = chord / usable if usable > 0 else 1.0
     spacing = (SPACING_GENTLE_MULT if straightness > STRAIGHTNESS_THRESHOLD else SPACING_TIGHT_MULT) * A
 
+    pairs = pair_rails(railA, railB, A)
+    progress = pair_progress(pairs)
+
+    near = MIN_FROM_POINT_MULT * B
+    min_w = POINT_MIN_WIDTH_MULT * B
+    start_point = end0["type"] == "point"
+    end_point = end1["type"] == "point"
+
+    def usable_pair(k):
+        sA, sB, pA, pB = pairs[k]
+        if not (lo <= sA <= hi):
+            return False
+        if (start_point or end_point) and np.linalg.norm(np.array(pB) - np.array(pA)) < min_w:
+            return False
+        return True
+
+    outline = column_outline(railA, railB)
+
+    def rung_points(k):
+        """Pair k's rail points, pulled back off a point end's tip on each rail."""
+        sA, sB, pA, pB = pairs[k]
+        if start_point:
+            if sA < near:
+                pA = railA.point_tangent(near)[0]
+            if sB < near:
+                pB = railB.point_tangent(near)[0]
+        if end_point:
+            if railA.length - sA < near:
+                pA = railA.point_tangent(railA.length - near)[0]
+            if railB.length - sB < near:
+                pB = railB.point_tangent(railB.length - near)[0]
+        return pA, pB
+
+    # A rung must cross the column itself: near a curl's center the pairing
+    # can reach across the gap to the next turn, and those pairs are skipped;
+    # at a curl-back the rung ends where its own rail crosses its way again.
+    spans = {}
+    for k in range(len(pairs)):
+        if usable_pair(k):
+            sp = rung_span(outline, *rung_points(k))
+            if sp is not None:
+                spans[k] = sp
+
+    def rung_at(k):
+        return rung_between(*spans[k], over)
+
+    ks = sorted(spans)
+    if not ks:
+        return []
+    k0, k1 = ks[0], ks[-1]
+
+    chosen = []
+    if start_point:
+        chosen.append(k0)  # the rung nearest the tail tip
+    target = progress[k0] + spacing
+    stop = progress[k1] - spacing * 0.5
+    for k in ks:
+        if progress[k] >= target and progress[k] < stop:
+            chosen.append(k)
+            target = progress[k] + spacing
+    if end_point:
+        # the rung nearest this tip; drop a regular rung crowding it
+        if chosen and progress[k1] - progress[chosen[-1]] < spacing * 0.5 and chosen[-1] != k0:
+            chosen.pop()
+        chosen.append(k1)
+
+    if not chosen:
+        # Short object: normal spacing didn't fit even one rung between the
+        # two end zones. Guarantee one, halfway along the usable span, so no
+        # rail stretch is left with no cross-ties at all.
+        mid = (progress[k0] + progress[k1]) / 2.0
+        chosen = [min(ks, key=lambda k: abs(progress[k] - mid))]
+
     subpaths = []
-    s = lo + spacing
-    while s < hi - spacing * 0.5:
-        pA, tanA = railA.point_tangent(s)
-        d = unit_normal(tanA)
-        # s_guess: railA and railB are roughly parallel-parametrized, so
-        # bias the search toward the LOCAL crossing at this arc-length
-        # position. Without it, line_cross defaults to Euclidean-nearest,
-        # which for a curve that loops back near itself (found live
-        # 2026-09-24, g6's looping magenta/blue strokes) can pick a
-        # crossing from a totally different, far-away part of the rail
-        # that just happens to pass physically close by - producing a
-        # long spurious rung across the whole loop instead of a local one.
-        # Scale by the two rails' total-length ratio, not a raw passthrough
-        # of s - a double-tapered piece's shorter/extended rail carries
-        # extra length from its added bend segment(s) (up to ~11% longer
-        # seen live), which drifts an unscaled guess enough to pick the
-        # wrong loop-proximate crossing again.
-        res = railB.line_cross(pA, d, s_guess=s * (railB.length / railA.length))
-        if res is not None:
-            pB, _ = res
-            dvec = np.array(pB) - np.array(pA)
-            local_w = np.linalg.norm(dvec)
-            u = dvec / local_w
-            overshoot = RUNG_OVERSHOOT_MULT * local_w
-            endA = np.array(pA) - u * overshoot
-            endB = np.array(pB) + u * overshoot
-            subpaths.append([[list(endA)] * 3, [list(endB)] * 3])
-        s += spacing
-
-    if not subpaths:
-        # Short object: normal spacing didn't fit even one rung between
-        # the two taper/open zones (e.g. an object that ends up as
-        # taper-rungs-only). Guarantee at least one, at the midpoint of
-        # the usable span, so no rail segment is left with zero
-        # cross-ties at all.
-        s_mid = (lo + hi) / 2.0
-        pA, tanA = railA.point_tangent(s_mid)
-        d = unit_normal(tanA)
-        res = railB.line_cross(pA, d, s_guess=s_mid)
-        if res is not None:
-            pB, _ = res
-            dvec = np.array(pB) - np.array(pA)
-            n = np.linalg.norm(dvec)
-            if n > 1e-9:
-                u = dvec / n
-                overshoot = RUNG_OVERSHOOT_MULT * n
-                endA = np.array(pA) - u * overshoot
-                endB = np.array(pB) + u * overshoot
-                subpaths.append([[list(endA)] * 3, [list(endB)] * 3])
-
+    for k in chosen:
+        r = rung_at(k)
+        if r is not None:
+            subpaths.append(r)
     return subpaths
 
 
