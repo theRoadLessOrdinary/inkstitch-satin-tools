@@ -17,6 +17,11 @@ The joined column keeps the style and every attribute (Ink/Stitch params
 included) of the lowest selected column in the stacking order, and takes
 its place; the other columns are removed. Columns in a closed loop are
 joined into one column that starts and ends at the same joint.
+
+With nodes selected in the Node tool, only the joints where a selected
+node sits are joined; ends that touch elsewhere are left apart. So two
+pieces of a loop, joined at one joint, make one column that starts and
+ends at the other.
 """
 import os
 import sys
@@ -105,22 +110,19 @@ class JoinSatin(EffectExtension):
             cols.append(Column(el, csp))
 
         tol = self.svg.unittouu(f'{JOIN_TOL_MM}mm')
-        chain = self.find_chain(cols, tol)
+        chain, ends = self.find_chain(cols, tol, self.selected_points(to_base, tol))
 
         # Walk the chain, turning each column to run onward from the last
         # and putting its rails on the same sides.
         first = chain[0]
         # The first column has to end at its joint with the second, not at
         # its free end.
-        if len(chain) > 1:
-            nxt = chain[1]
-            near = lambda e: min(gap(first.end(e), nxt.end(0)), gap(first.end(e), nxt.end(1)))
-            if near(0) < near(1):
-                first.reverse()
+        if len(chain) > 1 and ends[0][0] == 0:
+            first.reverse()
         a, b = first.a, first.b
         rungs = list(first.rungs)
-        for col in chain[1:]:
-            if gap((point(a[-1]), point(b[-1])), col.end(1)) < gap((point(a[-1]), point(b[-1])), col.end(0)):
+        for k, col in enumerate(chain[1:]):
+            if ends[k][1] == 1:
                 col.reverse()
             pa, pb = col.end(0)
             if np.linalg.norm(point(a[-1]) - pa) + np.linalg.norm(point(b[-1]) - pb) > \
@@ -139,8 +141,24 @@ class JoinSatin(EffectExtension):
         for col in cols[1:]:
             col.el.getparent().remove(col.el)
 
-    def find_chain(self, cols, tol):
-        """The columns in joining order, from which ends meet."""
+    def selected_points(self, to_base, tol):
+        """Where the nodes selected in the Node tool are, in the base
+        column's coordinates; None when no nodes are selected."""
+        points = []
+        for sel in self.options.selected_nodes or []:
+            try:
+                node_id, sp, nl = sel.split(':', 2)
+                el = self.svg.getElementById(node_id)
+                path = el.path.to_absolute().transform(to_base @ el.composed_transform())
+                points.append(point(path.to_superpath()[int(sp)][int(nl)]))
+            except (ValueError, IndexError, AttributeError):
+                continue
+        return points or None
+
+    def find_chain(self, cols, tol, selected=None):
+        """The columns in joining order, from which ends meet, and for each
+        joint (end of the earlier column, end of the later one). With
+        selected points, only ends with a selected node join."""
         n = len(cols)
         links = []
         for i in range(n):
@@ -148,17 +166,21 @@ class JoinSatin(EffectExtension):
                 for ei in (0, 1):
                     for ej in (0, 1):
                         d = gap(cols[i].end(ei), cols[j].end(ej))
-                        if d <= tol:
+                        if d <= tol and (selected is None or any(
+                                np.linalg.norm(p - q) <= tol for p in selected
+                                for q in cols[i].end(ei) + cols[j].end(ej))):
                             links.append((d, i, ei, j, ej))
         links.sort()
         taken = set()
         neighbors = {i: [] for i in range(n)}
+        joint = {}
         for _d, i, ei, j, ej in links:
             if (i, ei) in taken or (j, ej) in taken or j in neighbors[i]:
                 continue
             taken.update(((i, ei), (j, ej)))
             neighbors[i].append(j)
             neighbors[j].append(i)
+            joint[(i, j)], joint[(j, i)] = (ei, ej), (ej, ei)
 
         # Walk from a column with a free end; in a closed loop, from the
         # lowest one.
@@ -176,8 +198,10 @@ class JoinSatin(EffectExtension):
             raise inkex.AbortExtension(
                 f"These columns don't meet the others end to end: {', '.join(missing)}. "
                 f"The end node of each rail has to be within {JOIN_TOL_MM} mm of a rail "
-                "end of the next column.")
-        return [cols[i] for i in order]
+                "end of the next column, and when nodes are selected, a selected node has "
+                "to sit at the joint.")
+        ends = [joint[(order[k], order[k + 1])] for k in range(len(order) - 1)]
+        return [cols[i] for i in order], ends
 
 
 if __name__ == "__main__":

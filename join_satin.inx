@@ -4,7 +4,7 @@
 	<name>Join Satin</name>
 	<id>maps_edge.join_satin</id>
 
-	<param name="help" type="description">Select two or more satin columns that meet end to end, with each rail's end node on (or within 0.5 mm of) a rail end of the next column, then run this. They become one satin column: each rail joins the rail on its own side, the end nodes at each joint become one node, and all rungs are kept. Select them in any order. The joined column keeps the settings of the lowest selected column.</param>
+	<param name="help" type="description">Select two or more satin columns that meet end to end, with each rail's end node on (or within 0.5 mm of) a rail end of the next column, then run this. They become one satin column: each rail joins the rail on its own side, the end nodes at each joint become one node, and all rungs are kept. Select them in any order. The joined column keeps the settings of the lowest selected column. With nodes selected in the Node tool, only the joints where a selected node sits are joined.</param>
 
 	<effect>
 		<object-type>all</object-type>

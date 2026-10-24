@@ -186,6 +186,10 @@ The reverse of Cut Satin. Select two or more satin columns that meet end to end,
 - the joined column keeps the style and Ink/Stitch settings of the lowest selected column and takes its place. The others are removed.
 
 Columns in a closed loop become one column that starts and ends at the same joint. If a column doesn't meet the others, a message names it and nothing changes.
+With nodes selected in the Node tool, only the joints where a selected node
+sits are joined; ends that touch elsewhere stay apart. Two pieces of a loop
+joined at one joint make one column that starts and ends at the other.
+
 
 ## Cross-Splice Rails
 
