@@ -30,7 +30,7 @@
 		</page>
 
 		<page name="cut" gui-text="Cut Satin">
-			<param name="cut_help" type="description">Select the satin column plus a line drawn across it where you want to cut. Or, in the Node tool (N), select one node on each rail where you want to cut (or a node on just one rail to cut the other rail square across from it), then run this. The column is split into separate satin columns, each with its own rail pieces and the rungs on its side of the cut. Several cuts at once work too. Or draw a closed shape (rectangle, circle, closed path) over the column instead of a line: the column is cut where the shape crosses it, the piece inside the shape is deleted, and the shape is deleted too.</param>
+			<param name="cut_help" type="description">Select the satin column plus a line drawn across it where you want to cut. Or, in the Node tool (N), select one node on each rail where you want to cut (or a node on just one rail to cut the other rail square across from it), then run this. The column is split into separate satin columns, each with its own rail pieces and the rungs on its side of the cut. Several cuts at once work too. Or draw a closed shape (rectangle, circle, closed path) over the column instead of a line: the column is cut where the shape crosses it, the piece inside the shape is deleted, and the shape is deleted too. Or select only a satin column that is already in separate pieces: each piece becomes its own satin column, with its own two rails and the rungs between them.</param>
 		</page>
 
 		<page name="normalize" gui-text="Normalize Direction">

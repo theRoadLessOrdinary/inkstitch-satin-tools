@@ -8,7 +8,8 @@ Inkscape extensions for building and adjusting **satin columns** for [Ink/Stitch
 | **Edit Ladder Rungs** | Builds the rungs for two rails, then adds or removes rungs | `maps_edge.rung_rail_satin` |
 | **Add Rung at Node** | Adds one rung at a node you pick on a rail | `maps_edge.add_rung_at_node` |
 | **Outset / Inset Satin Column** | Makes a satin column wider or narrower without redrawing it | `maps_edge.outset_satin` |
-| **Cut Satin at Nodes** | Splits a satin column into separate columns at nodes, a line, or a shape | `maps_edge.cut_satin_at_nodes` |
+| **Cut Satin at Nodes** | Splits a satin column into separate columns at nodes, a line, or a shape, or separates a column already in pieces | `maps_edge.cut_satin_at_nodes` |
+| **Join Satin** | Joins satin columns that meet end to end into one column | `maps_edge.join_satin` |
 | **Cross-Splice Rails** | Rejoins 2 or 4 open strokes at a crossing into rails, and builds rungs | `maps_edge.cross_splice_satin` |
 | **Normalize Stitch Direction** | Flips rail direction across several columns so they stitch through in one direction | `maps_edge.normalize_stitch_direction` |
 | **Weave Paths** | Cuts gaps in crossing strands so they read as woven over and under | `maps_edge.weave_paths` |
@@ -159,8 +160,20 @@ Splits one satin column into separate satin columns. Each piece gets its own rai
 - **A line:** select the column plus one or more lines drawn across it. Each line must cross each rail once. The lines are left in place.
 - **A closed shape:** draw a rectangle, circle or closed path over the column instead. The column is cut where the outline crosses the rails, the piece inside the shape is deleted with its rungs, and the shape is deleted.
 - **Nodes:** in the Node tool, select one node on each rail per cut, or a node on just one rail (the other rail is cut square across from it). Both rails need the same number of nodes, or one rail none. Rail end nodes cannot be cut points.
+- **Already in pieces:** select only the column, with no line, shape or nodes. A column whose rails were broken into separate pieces, for example by deleting segments in the Node tool, becomes one satin column per piece, each with its own two rails and the rungs between them. Subpaths that cross belong to the same piece; a piece with no rungs is matched to the nearest other lone rail. Rail pieces that only touch end to end count as separate.
 
 Several cuts in one run are fine. A rung that straddles a cut goes to the side it is further into, and a message says how many did.
+
+## Join Satin
+
+The reverse of Cut Satin. Select two or more satin columns that meet end to end, so that each rail's end node sits on, or within 0.5 mm of, a rail end of the next column. Run **Join Satin** and they become one satin column:
+
+- each rail joins the rail on its own side of the next column, and the two end nodes at each joint become one node at their midpoint, keeping both handles;
+- every rung is kept;
+- the columns can be selected in any order and drawn in any direction. Rails that run opposite ways, or swap sides from one column to the next, are lined up first;
+- the joined column keeps the style and Ink/Stitch settings of the lowest selected column and takes its place. The others are removed.
+
+Columns in a closed loop become one column that starts and ends at the same joint. If a column doesn't meet the others, a message names it and nothing changes.
 
 ## Cross-Splice Rails
 
@@ -229,6 +242,7 @@ Run it once per crossing.
 | `angle_rungs.py` | **Angle Rungs** (reached through Satin Rail Tools) |
 | `outset_satin.inx`, `outset_satin.py` | **Outset / Inset Satin Column** |
 | `cut_satin_at_nodes.inx`, `cut_satin_at_nodes.py` | **Cut Satin at Nodes** |
+| `join_satin.inx`, `join_satin.py` | **Join Satin** |
 | `cross_splice_satin.inx`, `cross_splice_satin.py` | **Cross-Splice Rails** |
 | `normalize_stitch_direction.inx`, `normalize_stitch_direction.py` | **Normalize Stitch Direction** |
 | `weave_paths.inx`, `weave_paths.py` | **Weave Paths** |

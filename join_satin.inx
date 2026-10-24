@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<inkscape-extension xmlns="http://www.inkscape.org/namespace/inkscape/extension">
+
+	<name>Join Satin</name>
+	<id>maps_edge.join_satin</id>
+
+	<param name="help" type="description">Select two or more satin columns that meet end to end, with each rail's end node on (or within 0.5 mm of) a rail end of the next column, then run this. They become one satin column: each rail joins the rail on its own side, the end nodes at each joint become one node, and all rungs are kept. Select them in any order. The joined column keeps the settings of the lowest selected column.</param>
+
+	<effect>
+		<object-type>all</object-type>
+		<effects-menu>
+			<submenu name="Map's Edge Tools" translatable="no">
+				<submenu name="Embroidery" translatable="no">
+					<submenu name="Satin" translatable="no" />
+				</submenu>
+			</submenu>
+		</effects-menu>
+	</effect>
+
+	<script>
+		<command location="inx" interpreter="python">join_satin.py</command>
+	</script>
+
+</inkscape-extension>

@@ -33,6 +33,10 @@ that crosses rail A on one side of a cut and rail B on the other side
 (it straddles the cut line) goes to whichever side it's further into,
 and a warning names how many did that.
 
+Only satin column(s) selected, with no cut line, shape or nodes: a column
+already in separate pieces becomes one satin column per piece (see
+separate_sections).
+
 The pieces keep the original's style and all its attributes (Ink/Stitch
 params included); the original path is removed.
 """
@@ -193,11 +197,108 @@ def shape_polygon(sp):
     return poly
 
 
+def subpath_polyline(sp):
+    pts = [np.array(sp[0][1], dtype=float)]
+    for j in range(len(sp) - 1):
+        pts.extend(np.array(p, dtype=float)
+                   for p in bg.flatten_cubic(sp[j][1], sp[j][2], sp[j + 1][0], sp[j + 1][1])[1:])
+    return np.array(pts)
+
+
+def polylines_cross(pa, pb):
+    """Whether two polylines meet anywhere other than an end of each. Rail
+    pieces left end to end by an earlier cut touch only at their ends, and
+    that doesn't join them; a rung crossing a rail does."""
+    lo_a, hi_a = pa.min(0), pa.max(0)
+    lo_b, hi_b = pb.min(0), pb.max(0)
+    if np.any(hi_a < lo_b - NODE_SNAP_DIST) or np.any(hi_b < lo_a - NODE_SNAP_DIST):
+        return False
+    a0, a1 = pa[:-1, None, :], pa[1:, None, :]
+    b0, b1 = pb[None, :-1, :], pb[None, 1:, :]
+    da, db = a1 - a0, b1 - b0
+    denom = da[..., 0] * db[..., 1] - da[..., 1] * db[..., 0]
+    diff = b0 - a0
+    with np.errstate(divide='ignore', invalid='ignore'):
+        t = (diff[..., 0] * db[..., 1] - diff[..., 1] * db[..., 0]) / denom
+        u = (diff[..., 0] * da[..., 1] - diff[..., 1] * da[..., 0]) / denom
+    hit = (np.abs(denom) > 1e-12) & (t >= 0) & (t <= 1) & (u >= 0) & (u <= 1)
+    if not hit.any():
+        return False
+    pts = (a0 + t[..., None] * da)[hit]
+    ends_a, ends_b = pa[[0, -1]], pb[[0, -1]]
+    for p in pts:
+        at_a = np.min(np.linalg.norm(ends_a - p, axis=1)) < NODE_SNAP_DIST
+        at_b = np.min(np.linalg.norm(ends_b - p, axis=1)) < NODE_SNAP_DIST
+        if not (at_a and at_b):
+            return True
+    return False
+
+
+def mean_distance(pa, pb):
+    """Average distance from points of one polyline to the nearest point of
+    the other, both ways: small for the two rails of one piece."""
+    d = np.linalg.norm(pa[:, None, :] - pb[None, :, :], axis=2)
+    return (d.min(1).mean() + d.min(0).mean()) / 2
+
+
+def separate_sections(csp):
+    """Split one satin column path made of separate pieces into one satin
+    column per piece: [rail, rail, rungs...] each. Subpaths that cross are in
+    the same piece (a rung crosses both rails of its piece). A piece with no
+    rungs is two lone rails, paired by distance."""
+    n = len(csp)
+    polys = [subpath_polyline(sp) for sp in csp]
+    group = list(range(n))
+
+    def find(i):
+        while group[i] != i:
+            group[i] = group[group[i]]
+            i = group[i]
+        return i
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            if find(i) != find(j) and polylines_cross(polys[i], polys[j]):
+                group[find(i)] = find(j)
+    members = {}
+    for i in range(n):
+        members.setdefault(find(i), []).append(i)
+
+    sections = [m for m in members.values() if len(m) >= 3]
+    small = [m for m in members.values() if len(m) < 3]
+    if any(len(m) == 2 for m in small):
+        raise inkex.AbortExtension(
+            "Part of this column has a rung but only one rail. Check the "
+            "column in the Node tool, then run this again.")
+    lone = [m[0] for m in small]
+    pairs = sorted((mean_distance(polys[i], polys[j]), i, j)
+                   for k, i in enumerate(lone) for j in lone[k + 1:])
+    used = set()
+    for _d, i, j in pairs:
+        if i not in used and j not in used:
+            used.update((i, j))
+            sections.append([i, j])
+    if len(used) != len(lone):
+        raise inkex.AbortExtension(
+            "Part of this column is a single rail with no second rail beside "
+            "it, so it can't be a satin column on its own.")
+
+    out = []
+    for m in sorted(sections, key=min):
+        sub = [csp[i] for i in m]
+        ia, ib = find_rail_indices(sub)
+        out.append([sub[ia], sub[ib]] + [sp for k, sp in enumerate(sub) if k not in (ia, ib)])
+    return out
+
+
 class CutSatinAtNodes(EffectExtension):
     def effect(self):
         lines = [e for e in self.svg.selection.filter(PathElement)
                  if len(e.path.to_superpath()) == 1]
         lines += list(self.svg.selection.filter(Rectangle, Circle, Ellipse, Polygon))
+        if not lines and not self.options.selected_nodes and self.svg.selection:
+            self.separate_selected()
+            return
         shapes = [e for e in lines if is_closed_cutter(e)]
         polygons = []
         if lines:
@@ -286,6 +387,37 @@ class CutSatinAtNodes(EffectExtension):
                 "side). Each went to the side it reaches further into - "
                 "check those near the cut."
             )
+
+    def separate_selected(self):
+        """Only satin column(s) selected, no cut line or nodes: split each
+        column that is in separate pieces into one column per piece."""
+        columns = list(self.svg.selection.filter(PathElement))
+        if not columns:
+            raise inkex.AbortExtension(
+                "Select a satin column that is in separate pieces, or a satin "
+                "column plus a cut line or shape.")
+        split = 0
+        for el in columns:
+            csp = [[list(map(list, n)) for n in sp] for sp in el.path.to_absolute().to_superpath()]
+            if len(csp) < 4:
+                continue
+            sections = separate_sections(csp)
+            if len(sections) < 2:
+                continue
+            parent = el.getparent()
+            pos = parent.index(el)
+            for i, sub in enumerate(sections):
+                piece = el.copy()
+                piece.path = make_csp(sub).to_path()
+                parent.insert(pos + 1 + i, piece)
+                piece.set_random_id(el.get_id())
+            parent.remove(el)
+            split += 1
+        if not split:
+            raise inkex.AbortExtension(
+                "The selected column is one piece, so there is nothing to "
+                "separate. To cut it, also select a line drawn across it, or "
+                "select nodes on its rails in the Node tool.")
 
     def cuts_from_lines(self, lines, shapes):
         columns = [e for e in self.svg.selection.filter(PathElement) if e not in lines]
