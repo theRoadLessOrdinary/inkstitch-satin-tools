@@ -10,6 +10,7 @@ Inkscape extensions for building and adjusting **satin columns** for [Ink/Stitch
 | **Outset / Inset Satin Column** | Makes a satin column wider or narrower without redrawing it | `maps_edge.outset_satin` |
 | **Cut Satin at Nodes** | Splits a satin column into separate columns at nodes, a line, or a shape, or separates a column already in pieces | `maps_edge.cut_satin_at_nodes` |
 | **Join Satin** | Joins satin columns that meet end to end into one column | `maps_edge.join_satin` |
+| **Satin Center Line** | Draws a line down the middle of a satin column, in its style, just under it | `maps_edge.satin_center_line` |
 | **Cross-Splice Rails** | Rejoins 2 or 4 open strokes at a crossing into rails, and builds rungs | `maps_edge.cross_splice_satin` |
 | **Normalize Stitch Direction** | Flips rail direction across several columns so they stitch through in one direction | `maps_edge.normalize_stitch_direction` |
 | **Weave Paths** | Cuts gaps in crossing strands so they read as woven over and under | `maps_edge.weave_paths` |
@@ -164,6 +165,17 @@ Splits one satin column into separate satin columns. Each piece gets its own rai
 
 Several cuts in one run are fine. A rung that straddles a cut goes to the side it is further into, and a message says how many did.
 
+## Satin Center Line
+
+Select one or more satin columns and run it. Each gets a new path down the
+middle of its two rails, with the satin's own style (stroke color, width
+and the rest), placed just under the satin in the stacking order. The satin
+column is kept. The new path is a plain path, not a satin column, so
+Ink/Stitch stitches it as a running stitch. Rungs decide which point on one
+rail goes with which on the other. The line has a node wherever a rail or a
+rung has one, plus extra nodes only where a curve needs them to stay within
+0.05 mm of the true middle.
+
 ## Join Satin
 
 The reverse of Cut Satin. Select two or more satin columns that meet end to end, so that each rail's end node sits on, or within 0.5 mm of, a rail end of the next column. Run **Join Satin** and they become one satin column:
@@ -243,6 +255,7 @@ Run it once per crossing.
 | `outset_satin.inx`, `outset_satin.py` | **Outset / Inset Satin Column** |
 | `cut_satin_at_nodes.inx`, `cut_satin_at_nodes.py` | **Cut Satin at Nodes** |
 | `join_satin.inx`, `join_satin.py` | **Join Satin** |
+| `satin_center_line.inx`, `satin_center_line.py` | **Satin Center Line** |
 | `cross_splice_satin.inx`, `cross_splice_satin.py` | **Cross-Splice Rails** |
 | `normalize_stitch_direction.inx`, `normalize_stitch_direction.py` | **Normalize Stitch Direction** |
 | `weave_paths.inx`, `weave_paths.py` | **Weave Paths** |

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<inkscape-extension xmlns="http://www.inkscape.org/namespace/inkscape/extension">
+
+	<name>Satin Center Line</name>
+	<id>maps_edge.satin_center_line</id>
+
+	<param name="help" type="description">Select one or more satin columns, then run this. Each gets a line down the middle of its rails, in the satin's own style, placed just under the satin. The satin column is kept. The line is a plain path, so Ink/Stitch stitches it as a running stitch.</param>
+
+	<effect>
+		<object-type>all</object-type>
+		<effects-menu>
+			<submenu name="Map's Edge Tools" translatable="no">
+				<submenu name="Embroidery" translatable="no">
+					<submenu name="Satin" translatable="no" />
+				</submenu>
+			</submenu>
+		</effects-menu>
+	</effect>
+
+	<script>
+		<command location="inx" interpreter="python">satin_center_line.py</command>
+	</script>
+
+</inkscape-extension>

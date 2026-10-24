@@ -241,6 +241,22 @@ def mean_distance(pa, pb):
     return (d.min(1).mean() + d.min(0).mean()) / 2
 
 
+def pair_pieces(pieces_a, pieces_b):
+    """For each piece of rail A, the index of the rail B piece that runs
+    closest beside it (closest pairs taken first, each piece used once)."""
+    polys_a = [subpath_polyline(sp) for sp in pieces_a]
+    polys_b = [subpath_polyline(sp) for sp in pieces_b]
+    pairs = sorted((mean_distance(pa, pb) + mean_distance(pb, pa), i, j)
+                   for i, pa in enumerate(polys_a) for j, pb in enumerate(polys_b))
+    b_for_a = [None] * len(pieces_a)
+    used = set()
+    for _d, i, j in pairs:
+        if b_for_a[i] is None and j not in used:
+            b_for_a[i] = j
+            used.add(j)
+    return b_for_a
+
+
 def separate_sections(csp):
     """Split one satin column path made of separate pieces into one satin
     column per piece: [rail, rail, rungs...] each. Subpaths that cross are in
@@ -306,18 +322,16 @@ class CutSatinAtNodes(EffectExtension):
         else:
             el, csp, ia, ib, rails, cuts = self.cuts_from_nodes()
 
-        # Rails are often drawn anti-parallel; if so, rail B's order runs
-        # backwards relative to rail A's, and so do its pieces.
-        sa, ea = np.array(rails[ia].start()), np.array(rails[ia].end())
-        sb, eb = np.array(rails[ib].start()), np.array(rails[ib].end())
-        reversed_b = (np.linalg.norm(sa - eb) + np.linalg.norm(ea - sb)) < \
-                     (np.linalg.norm(sa - sb) + np.linalg.norm(ea - eb))
-
         pieces_a = split_rail(rails[ia], csp[ia], cuts[ia])
         pieces_b = split_rail(rails[ib], csp[ib], cuts[ib])
-        if reversed_b:
-            pieces_b.reverse()
         n_pieces = len(pieces_a)
+        # Each piece of rail B goes with the piece of rail A it runs closest
+        # beside. Comparing where the rails start and end can't tell this on
+        # a closed loop (each rail starts and ends at one point), and rails
+        # are often drawn anti-parallel.
+        b_for_a = pair_pieces(pieces_a, pieces_b)
+        a_for_b = {b: a for a, b in enumerate(b_for_a)}
+        pieces_b = [pieces_b[b] for b in b_for_a]
 
         cut_s_a = [s for s, _ in cuts[ia]]
         cut_s_b = [s for s, _ in cuts[ib]]
@@ -334,8 +348,7 @@ class CutSatinAtNodes(EffectExtension):
             idx_a = piece_index(s_a, cut_s_a)
             idx_b = piece_index(s_b, cut_s_b)
             depth_b = distance_into_piece(s_b, cut_s_b, idx_b, len_b)
-            if reversed_b:
-                idx_b = n_pieces - 1 - idx_b
+            idx_b = a_for_b[idx_b]
             if idx_a == idx_b:
                 groups[idx_a].append(sp)
                 continue
@@ -352,7 +365,7 @@ class CutSatinAtNodes(EffectExtension):
             bounds_a = [0.0] + cut_s_a + [rails[ia].length]
             bounds_b = [0.0] + cut_s_b + [len_b]
             for i in range(n_pieces):
-                j = n_pieces - 1 - i if reversed_b else i
+                j = b_for_a[i]
                 mid_a = rails[ia].point_tangent((bounds_a[i] + bounds_a[i + 1]) / 2)[0]
                 mid_b = rails[ib].point_tangent((bounds_b[j] + bounds_b[j + 1]) / 2)[0]
                 in_a = any(bg.point_in_polygon(mid_a, poly) for poly in polygons)
