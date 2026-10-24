@@ -138,6 +138,8 @@ class JoinSatin(EffectExtension):
         if cols[0].b_was_reversed:
             b = reverse_subpath(b)
         base.path = make_csp([a, b] + rungs).to_path()
+        # The old node types no longer match the nodes; Inkscape works them out again.
+        base.attrib.pop(inkex.addNS('nodetypes', 'sodipodi'), None)
         for col in cols[1:]:
             col.el.getparent().remove(col.el)
 

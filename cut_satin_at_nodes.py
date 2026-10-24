@@ -382,6 +382,7 @@ class CutSatinAtNodes(EffectExtension):
                 continue
             piece = el.copy()
             piece.path = make_csp([pieces_a[i], pieces_b[i]] + groups[i]).to_path()
+            piece.attrib.pop(inkex.addNS('nodetypes', 'sodipodi'), None)
             parent.insert(pos + 1 + i, piece)
             piece.set_random_id(el.get_id())
         parent.remove(el)
@@ -422,6 +423,7 @@ class CutSatinAtNodes(EffectExtension):
             for i, sub in enumerate(sections):
                 piece = el.copy()
                 piece.path = make_csp(sub).to_path()
+                piece.attrib.pop(inkex.addNS('nodetypes', 'sodipodi'), None)
                 parent.insert(pos + 1 + i, piece)
                 piece.set_random_id(el.get_id())
             parent.remove(el)
