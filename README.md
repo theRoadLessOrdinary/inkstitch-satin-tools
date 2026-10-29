@@ -156,14 +156,14 @@ Each run is a single Inkscape undo step.
 
 ## Cut Satin at Nodes
 
-Splits one satin column into separate satin columns. Each piece gets its own rail pieces and the rungs on its side of the cut, and keeps the original's style and Ink/Stitch settings. Ways to say where to cut:
+Splits satin columns into separate satin columns. It works on every satin column in the selection: each column a line or shape crosses is cut, and columns it misses are left alone. Each piece gets its own rail pieces and the rungs on its side of the cut, and keeps the original's style and Ink/Stitch settings. Ways to say where to cut:
 
-- **A line:** select the column plus one or more lines drawn across it. Each line must cross each rail once. The lines are left in place.
+- **A line:** select the column(s) plus one or more lines drawn across them. Each line must cross each rail once. The lines are left in place.
 - **A closed shape:** draw a rectangle, circle or closed path over the column instead. The column is cut where the outline crosses the rails, the piece inside the shape is deleted with its rungs, and the shape is deleted.
-- **Nodes:** in the Node tool, select one node on each rail per cut, or a node on just one rail (the other rail is cut square across from it). Both rails need the same number of nodes, or one rail none. Rail end nodes cannot be cut points.
+- **Nodes:** in the Node tool, select one node on each rail per cut (nodes can be on several columns at once), or a node on just one rail (the other rail is cut square across from it). Both rails need the same number of nodes, or one rail none. Rail end nodes cannot be cut points.
 - **Already in pieces:** select only the column, with no line, shape or nodes. A column whose rails were broken into separate pieces, for example by deleting segments in the Node tool, becomes one satin column per piece, each with its own two rails and the rungs between them. Subpaths that cross belong to the same piece; a piece with no rungs is matched to the nearest other lone rail. Rail pieces that only touch end to end count as separate.
 
-Several cuts in one run are fine. A rung that straddles a cut goes to the side it is further into, and a message says how many did.
+Several cuts in one run are fine. If any column would fail (a line crossing only one of its rails, for example), the message names that column and nothing is changed. A rung that straddles a cut goes to the side it is further into, and a message says how many did.
 
 ## Satin Center Line
 

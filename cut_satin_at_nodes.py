@@ -2,9 +2,11 @@
 """
 Cut Satin at Nodes (Ink/Stitch satin column helper)
 
-Either select a satin column (2 rails + rungs, one combined path) plus
-one or more lines drawn across it where you want to cut, or, in the Node
-tool (N), select the cut node(s) on the column's rails. Then run this. Each rail is cut at
+Either select one or more satin columns (2 rails + rungs, one combined
+path each) plus one or more lines drawn across them where you want to cut,
+or, in the Node tool (N), select the cut node(s) on the columns' rails.
+Every selected column a line or shape crosses is cut; columns it misses
+are left alone. Then run this. Each rail is cut at
 its selected node(s), and the column is split into separate satin
 columns, each made of its own rail pieces plus the rungs that fall on
 its side of the cut. Same as doing Break Apart, then re-combining each
@@ -316,12 +318,37 @@ class CutSatinAtNodes(EffectExtension):
             self.separate_selected()
             return
         shapes = [e for e in lines if is_closed_cutter(e)]
-        polygons = []
+        # Work out every column's cuts before changing anything, so an error
+        # on one column leaves the whole document as it was.
         if lines:
-            el, csp, ia, ib, rails, cuts, polygons = self.cuts_from_lines(lines, shapes)
+            jobs = self.cuts_from_lines(lines, shapes)
         else:
-            el, csp, ia, ib, rails, cuts = self.cuts_from_nodes()
+            jobs = self.cuts_from_nodes()
 
+        half_in = straddled = 0
+        for job in jobs:
+            h, s = self.cut_column(*job)
+            half_in += h
+            straddled += s
+        for shape in shapes:
+            shape.getparent().remove(shape)
+
+        if half_in:
+            inkex.errormsg(
+                f"{half_in} piece(s) had one rail inside the shape and the "
+                "other outside, so they were kept. Draw the shape all the "
+                "way across the column."
+            )
+        if straddled:
+            inkex.errormsg(
+                f"{straddled} rung(s) crossed the cut line (one end on each "
+                "side). Each went to the side it reaches further into - "
+                "check those near the cut."
+            )
+
+    def cut_column(self, el, csp, ia, ib, rails, cuts, polygons):
+        """Split one satin column at its cuts. Returns (pieces half inside a
+        shape, rungs that straddled a cut)."""
         pieces_a = split_rail(rails[ia], csp[ia], cuts[ia])
         pieces_b = split_rail(rails[ib], csp[ib], cuts[ib])
         n_pieces = len(pieces_a)
@@ -386,21 +413,7 @@ class CutSatinAtNodes(EffectExtension):
             parent.insert(pos + 1 + i, piece)
             piece.set_random_id(el.get_id())
         parent.remove(el)
-        for shape in shapes:
-            shape.getparent().remove(shape)
-
-        if half_in:
-            inkex.errormsg(
-                f"{half_in} piece(s) had one rail inside the shape and the "
-                "other outside, so they were kept. Draw the shape all the "
-                "way across the column."
-            )
-        if straddled:
-            inkex.errormsg(
-                f"{straddled} rung(s) crossed the cut line (one end on each "
-                "side). Each went to the side it reaches further into - "
-                "check those near the cut."
-            )
+        return half_in, straddled
 
     def separate_selected(self):
         """Only satin column(s) selected, no cut line or nodes: split each
@@ -435,54 +448,68 @@ class CutSatinAtNodes(EffectExtension):
                 "select nodes on its rails in the Node tool.")
 
     def cuts_from_lines(self, lines, shapes):
+        """Every selected satin column the cut lines or shapes cross gets cut.
+        Columns they don't touch at all are left alone."""
         columns = [e for e in self.svg.selection.filter(PathElement) if e not in lines]
-        if len(columns) != 1:
+        if not columns:
             raise inkex.AbortExtension(
-                "Select exactly one satin column plus the cut line(s) or "
-                "closed shape(s). "
-                f"Found {len(columns)} satin column(s) in the selection."
+                "Select the satin column(s) plus the cut line(s) or closed "
+                "shape(s). No satin column was found in the selection."
             )
-        el = columns[0]
-        csp, ia, ib, rails = rail_setup(el)
+        jobs = []
+        for el in columns:
+            name = el.get_id()
+            csp, ia, ib, rails = rail_setup(el)
 
-        # Bring each cut line into the satin column's own coordinates.
-        to_local = -el.composed_transform()
-        line_csp = []
-        polygons = []
-        for line in lines:
-            path = line.path.to_absolute().transform(to_local @ line.composed_transform())
-            if line in shapes:
-                for sp in path.to_superpath():
-                    sp = close_subpath(sp)
-                    line_csp.append(sp)
-                    polygons.append(shape_polygon(sp))
-            else:
-                line_csp.extend(path.to_superpath())
+            # Bring each cut line into this satin column's own coordinates.
+            to_local = -el.composed_transform()
+            line_csp = []
+            polygons = []
+            for line in lines:
+                path = line.path.to_absolute().transform(to_local @ line.composed_transform())
+                if line in shapes:
+                    for sp in path.to_superpath():
+                        sp = close_subpath(sp)
+                        line_csp.append(sp)
+                        polygons.append(shape_polygon(sp))
+                else:
+                    line_csp.extend(path.to_superpath())
 
-        cuts = {}
-        for k in (ia, ib):
-            hits = [s for s in line_crossings(rails[k], line_csp)
-                    if NODE_SNAP < s < rails[k].length - NODE_SNAP]
-            if not hits:
+            cuts = {}
+            for k in (ia, ib):
+                cuts[k] = [(s, None) for s in line_crossings(rails[k], line_csp)
+                           if NODE_SNAP < s < rails[k].length - NODE_SNAP]
+            if not cuts[ia] and not cuts[ib]:
+                continue
+            if not cuts[ia] or not cuts[ib]:
                 raise inkex.AbortExtension(
-                    "The cut line or shape doesn't cross both rails. Draw it "
-                    "all the way across the column."
+                    f"The cut line or shape crosses only one rail of satin "
+                    f"column {name}. Draw it all the way across the column. "
+                    "Nothing was changed."
                 )
-            cuts[k] = [(s, None) for s in hits]
+            if len(cuts[ia]) != len(cuts[ib]):
+                raise inkex.AbortExtension(
+                    f"On satin column {name}, the cut line(s) or shape(s) "
+                    f"cross one rail {len(cuts[ia])} time(s) and the other "
+                    f"{len(cuts[ib])} time(s). Each cut has to cross each "
+                    "rail exactly once. Nothing was changed."
+                )
+            jobs.append((el, csp, ia, ib, rails, cuts, polygons))
 
-        if len(cuts[ia]) != len(cuts[ib]):
+        if not jobs:
             raise inkex.AbortExtension(
-                f"The cut line(s) or shape(s) cross one rail {len(cuts[ia])} "
-                f"time(s) and the other {len(cuts[ib])} time(s). Each cut has "
-                "to cross each rail exactly once."
+                "The cut line or shape doesn't cross any selected satin "
+                "column. Draw it all the way across the column(s)."
             )
-        return el, csp, ia, ib, rails, cuts, polygons
+        return jobs
 
     def cuts_from_nodes(self):
+        """Selected rail nodes, on one or more satin columns. Each column is
+        cut at its own nodes."""
         selected = self.options.selected_nodes
         if not selected:
             raise inkex.AbortExtension(
-                "Either select the satin column plus a line drawn across it "
+                "Either select the satin column(s) plus a line drawn across "
                 "where you want to cut (or a closed shape drawn over the part "
                 "to remove), or, in the Node tool (N), select "
                 "the node(s) on the satin column's rails where you want to "
@@ -491,32 +518,36 @@ class CutSatinAtNodes(EffectExtension):
 
         try:
             parsed = [sel.split(":", 2) for sel in selected]
-            ids = {p[0] for p in parsed}
-            nodes = [(int(p[1]), int(p[2])) for p in parsed]
+            by_id = {}
+            for p in parsed:
+                by_id.setdefault(p[0], []).append((int(p[1]), int(p[2])))
         except (ValueError, IndexError):
             raise inkex.AbortExtension(f"Couldn't parse selected node(s) {selected!r}.")
 
-        if len(ids) != 1:
-            raise inkex.AbortExtension("All selected nodes must be on the same satin column.")
+        jobs = []
+        for el_id, nodes in by_id.items():
+            el = self.svg.getElementById(el_id)
+            if el is None or not isinstance(el, PathElement):
+                raise inkex.AbortExtension(f"The selected nodes' object {el_id} isn't a path.")
+            jobs.append(self.node_cuts(el, nodes))
+        return jobs
 
-        el = self.svg.getElementById(ids.pop())
-        if el is None or not isinstance(el, PathElement):
-            raise inkex.AbortExtension("The selected nodes' object isn't a path.")
-
+    def node_cuts(self, el, nodes):
+        name = el.get_id()
         csp, ia, ib, rails = rail_setup(el)
 
         cuts = {ia: [], ib: []}
         for sp, nl in sorted(set(nodes)):
             if sp not in rails:
                 raise inkex.AbortExtension(
-                    f"A selected node is on subpath {sp}, which is a rung, not "
-                    "a rail. Select nodes on the two rails only."
+                    f"A selected node on {name} is on subpath {sp}, which is "
+                    "a rung, not a rail. Select nodes on the two rails only."
                 )
             rail = rails[sp]
             if nl <= 0 or nl >= len(csp[sp]) - 1:
                 raise inkex.AbortExtension(
-                    "A selected node is a rail's end node. Cut points have "
-                    "to be interior nodes."
+                    f"A selected node on {name} is a rail's end node. Cut "
+                    "points have to be interior nodes."
                 )
             cuts[sp].append((rail.seg_bounds[nl], nl))
 
@@ -530,27 +561,28 @@ class CutSatinAtNodes(EffectExtension):
                     res = rails[dst].line_cross(np.array(p), d)
                     if res is None:
                         raise inkex.AbortExtension(
-                            "Couldn't find where a line square to the rail at "
-                            "a selected node crosses the other rail. Select "
-                            "a node on the other rail too."
+                            f"On {name}, couldn't find where a line square to "
+                            "the rail at a selected node crosses the other "
+                            "rail. Select a node on the other rail too."
                         )
                     s_dst = res[1]
                     if s_dst <= NODE_SNAP or s_dst >= rails[dst].length - NODE_SNAP:
                         raise inkex.AbortExtension(
-                            "The matching cut on the other rail lands on its "
-                            "end. Select a node on the other rail too."
+                            f"On {name}, the matching cut on the other rail "
+                            "lands on its end. Select a node on the other "
+                            "rail too."
                         )
                     cuts[dst].append((s_dst, None))
                 cuts[dst].sort()
 
         if len(cuts[ia]) != len(cuts[ib]):
             raise inkex.AbortExtension(
-                f"One rail has {len(cuts[ia])} selected node(s) and the other "
-                f"has {len(cuts[ib])}. Select the same number on each rail "
-                "(one per cut), or nodes on only one rail."
+                f"On {name}, one rail has {len(cuts[ia])} selected node(s) "
+                f"and the other has {len(cuts[ib])}. Select the same number "
+                "on each rail (one per cut), or nodes on only one rail."
             )
 
-        return el, csp, ia, ib, rails, cuts
+        return el, csp, ia, ib, rails, cuts, []
 
 
 if __name__ == "__main__":
