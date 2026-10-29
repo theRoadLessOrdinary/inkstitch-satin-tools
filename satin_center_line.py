@@ -6,7 +6,8 @@ Select one or more satin columns and run this. Each gets a new path down
 the middle of its two rails, with the satin's own style (stroke color,
 width and the rest), placed just under the satin in the stacking order.
 The satin column is kept as it is. The new path is a plain path, not a
-satin column, so Ink/Stitch stitches it as a running stitch.
+satin column, so Ink/Stitch stitches it as a running stitch. Stroke color
+can instead be set to a picked color.
 
 Rungs decide which point on one rail goes with which on the other, as in
 Ink/Stitch. The line gets a node wherever either rail or a rung has one,
@@ -116,6 +117,10 @@ def center_line(middle, tol):
 
 
 class SatinCenterLine(EffectExtension):
+    def add_arguments(self, pars):
+        pars.add_argument("--color_source", default="own", choices=["own", "pick"])
+        pars.add_argument("--stroke_color", type=inkex.Color, default=inkex.Color("#000000"))
+
     def effect(self):
         els = [e for e in self.svg.selection.filter(PathElement)
                if len(e.path.to_superpath()) >= 2]
@@ -137,6 +142,9 @@ class SatinCenterLine(EffectExtension):
             line.path = make_csp([sp]).to_path()
             if el.get('style'):
                 line.set('style', el.get('style'))
+            if self.options.color_source == 'pick':
+                # The Tool Panel sends the color as a "#rrggbb" string.
+                line.style['stroke'] = str(inkex.Color(self.options.stroke_color).to_rgb())
             if el.get('transform'):
                 line.set('transform', el.get('transform'))
             line.set('id', self.svg.get_unique_id('center'))

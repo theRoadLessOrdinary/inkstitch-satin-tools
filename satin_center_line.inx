@@ -6,6 +6,12 @@
 
 	<param name="help" type="description">Select one or more satin columns, then run this. Each gets a line down the middle of its rails, in the satin's own style, placed just under the satin. The satin column is kept. The line is a plain path, so Ink/Stitch stitches it as a running stitch.</param>
 
+	<param name="color_source" type="optiongroup" appearance="combo" gui-text="Stroke color">
+		<option value="own">Satin's own color</option>
+		<option value="pick">Pick a color</option>
+	</param>
+	<param name="stroke_color" type="color" appearance="colorbutton" gui-text="Color">0x000000ff</param>
+
 	<effect>
 		<object-type>all</object-type>
 		<effects-menu>
