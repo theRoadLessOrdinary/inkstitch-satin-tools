@@ -17,6 +17,7 @@ Inkscape extensions for building and adjusting **satin columns** for [Ink/Stitch
 | **Touch Rails at Crossing** | Extends the under column's rail tips to touch the over column | `maps_edge.touch_rails` |
 | **Taper Join at Crossing** | Tapers the under column's rails to one point on the over column | `maps_edge.taper_join` |
 | **Clip Under to Over** | Clips the under column at the over column so satin fill reaches the tip | `maps_edge.clip_to_over` |
+| **Reroute Rail Along Shape** | Sends a rail around a closed shape instead of through it, like Difference does for a filled area | `maps_edge.reroute_rail` |
 | Angle Rungs | Sets every rung to one angle across the column. No menu entry of its own: it is a tab in **Satin Rail Tools** | (in `maps_edge.satin_tools`) |
 
 All menu entries are under **Extensions > Map's Edge Tools > Embroidery > Satin**. Every tool is also a button on the [Map's Edge Tool Panel](https://github.com/theRoadLessOrdinary/maps-edge-panel).
@@ -65,7 +66,7 @@ Keep all the `.py` and `.inx` files together in one folder. To use these tools f
 Ink/Stitch does not require the two rails to come first in the path, and after editing they often do not. The tools differ in how they find them:
 
 - **Outset / Inset** uses Ink/Stitch's own rule: the rails are the subpaths that cross more than two other subpaths, or the two longest when that is unclear.
-- **Add Rung at Node, Cut Satin at Nodes, Touch Rails, Taper Join, Clip Under to Over** take the two longest subpaths.
+- **Add Rung at Node, Cut Satin at Nodes, Touch Rails, Taper Join, Clip Under to Over, Reroute Rail Along Shape** take the two longest subpaths. Reroute Rail Along Shape treats a path of one or two subpaths as all rails.
 - **Edit Ladder Rungs, Angle Rungs, Normalize Stitch Direction** take the first two subpaths.
 
 None of them reads `inkstitch:satin_column`: any path with two or more subpaths is treated as a satin column.
@@ -246,6 +247,18 @@ Run it once per crossing.
 - At an angled crossing the two rails enter at different points, which would leave the tip without a second rail for Ink/Stitch to fill against. So the shorter rail is extended along the over piece's near rail until it lines up with the longer rail's end, and satin fill reaches all the way to the tip.
 - Under-piece rungs with a node inside the over piece are removed.
 
+## Reroute Rail Along Shape
+
+**Select** one closed shape (a path, rectangle, circle or ellipse) and one or more rails: open paths, satin columns, or both. No dialog opens.
+
+- Where a rail runs through the shape, the part inside is replaced by the shape's edge between the two points where the rail crosses it. The rail now goes around the shape instead of through it. This is what Path > Difference does to a filled area, done on an open rail.
+- The edge is followed the shorter way around the shape.
+- Crossing points are exact: curves are split, not approximated.
+- A rail that starts or ends inside the shape is trimmed at the edge.
+- A rail that never crosses the shape's edge is left as it is.
+- On a satin column only the two rails are rerouted. Rungs are left as they are, so a rung inside the shape stays there.
+- The shape is deleted, as Difference does.
+
 ## Files
 
 | File | Purpose |
@@ -266,6 +279,7 @@ Run it once per crossing.
 | `touch_rails.inx`, `touch_rails.py` | **Touch Rails at Crossing** |
 | `taper_join.inx`, `taper_join.py` | **Taper Join at Crossing** |
 | `clip_to_over.inx`, `clip_to_over.py` | **Clip Under to Over** |
+| `reroute_rail.inx`, `reroute_rail.py` | **Reroute Rail Along Shape** |
 
 ## Known limits
 
@@ -273,6 +287,7 @@ Run it once per crossing.
 - Outset / Inset adds nodes to rails where needed for accuracy (about twice as many on one test design).
 - Cross-Splice joins with straight connectors and does not match curve arcs at the joint.
 - Touch Rails extends rail tips with straight lines.
+- Reroute Rail Along Shape always takes the shorter way around the shape. When the rail enters and leaves through different holes of a shape, that piece is cut out instead of rerouted.
 - Weave Paths and Taper Join rely on selection order, which Inkscape does not guarantee in every case.
 - Only the stated selections are supported. Anything else stops with an error message and leaves the document unchanged.
 
