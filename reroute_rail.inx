@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<inkscape-extension xmlns="http://www.inkscape.org/namespace/inkscape/extension">
+
+	<name>Reroute Rail Along Shape</name>
+	<id>maps_edge.reroute_rail</id>
+
+	<effect needs-live-preview="false">
+		<object-type>all</object-type>
+		<effects-menu>
+			<submenu name="Map's Edge Tools" translatable="no">
+				<submenu name="Embroidery" translatable="no">
+					<submenu name="Satin" translatable="no" />
+				</submenu>
+			</submenu>
+		</effects-menu>
+		<menu-tip>Select one closed shape and one or more rails or satin columns. The part of each rail inside the shape is replaced by the shape's edge (the shorter way around). The shape is deleted, as Difference does.</menu-tip>
+	</effect>
+
+	<script>
+		<command location="inx" interpreter="python">reroute_rail.py</command>
+	</script>
+
+</inkscape-extension>
